@@ -1694,7 +1694,7 @@ async function unzip(buf) { // -> Map(path -> Uint8Array), files only
 async function exportZip() {
   saveNow();
   const root = safeName(S.name) + '/';
-  const entries = vaultFiles().map(f => [root + f.path, f.text]);
+  const entries = [...vaultFiles().map(f => [root + f.path, f.text]), ...(await agentDocs()).map(([p, t]) => [root + p, t])];
   download(`braindead-${todayISO()}.zip`, await zip(entries), 'application/zip');
   toast(`Exported ${S.pages.length} pages — unzip to get a readable vault folder`);
 }
@@ -2304,6 +2304,18 @@ const metaText = (folders = vault.folders) => JSON.stringify({
   app: 'braindead', version: 1, name: S.name, vaultFormat: S.vaultFormat || 'mdhtml',
   dbs: S.dbs.map(db => ({ ...db, folder: folders[db.id] })), appData: S.appData || {},
 }, null, 2);
+// Guide for AI agents, dropped at the root of vaults, zips and data repos (never overwritten).
+const CLAUDE_STUB = '# Braindead vault\n\nThis folder holds Braindead data. Before adding or editing pages, follow AGENTS.md.\n\n@AGENTS.md\n';
+let agentDocsCache;
+async function agentDocs() {
+  if (!agentDocsCache) {
+    try {
+      const r = await fetch('docs/agent-guide.md', { cache: 'no-cache' });
+      agentDocsCache = r.ok ? [['AGENTS.md', await r.text()], ['CLAUDE.md', CLAUDE_STUB]] : [];
+    } catch (e) { agentDocsCache = []; }
+  }
+  return agentDocsCache;
+}
 // Every file of the vault, as written to a folder, a zip or GitHub: [{ path, text, id? }].
 function vaultFiles() {
   const { folders, files } = vaultLayout();
@@ -2367,7 +2379,7 @@ async function vaultPull() {
     vault.metaMtime = meta.mtime;
   }
   const byPath = Object.fromEntries(Object.entries(vault.files).map(([id, f]) => [f.path.toLowerCase(), id]));
-  const seen = new Set(), scanned = new Set(), pending = [];
+  const seen = new Set(), scanned = new Set(), pending = [], completed = [];
   for (const db of S.dbs) {
     const folder = vault.folders[db.id];
     if (!folder) continue;
@@ -2394,7 +2406,9 @@ async function vaultPull() {
         if (parsed.id && !pageById(parsed.id)) pg.id = parsed.id;
         S.pages.push(pg);
       }
+      const wasDone = isDone(pg);
       Object.assign(pg, { db: db.id, title: parsed.title, icon: parsed.icon, props: parsed.props, content: parsed.content, updated: edited });
+      if (!wasDone && isDone(pg)) completed.push(pg); // e.g. a bill marked paid in the file: reschedule it
       if (parsed.created) pg.created = parsed.created;
       if (parsed.order != null) pg.order = parsed.order;
       for (const [p, titles] of parsed.pending) pending.push([pg, p, titles]);
@@ -2409,6 +2423,7 @@ async function vaultPull() {
     const ids = target ? titles.map(t => pagesOf(target).find(x => norm(x.title) === norm(t))?.id).filter(Boolean) : [];
     if (ids.length) pg.props[p.id] = ids; else delete pg.props[p.id];
   }
+  for (const pg of completed) onCompleted(pg);
   // Files deleted from the folder (by hand, or on another computer).
   for (const [id, f] of Object.entries(vault.files)) {
     if (seen.has(id) || !scanned.has(f.path.split('/')[0])) continue;
@@ -2425,6 +2440,10 @@ async function vaultPush() {
   vault.folders = layout.folders;
   const meta = metaText();
   if (meta !== vault.metaText) { vault.metaMtime = await writeText(META_FILE, meta); vault.metaText = meta; }
+  if (!vault.docsChecked) {
+    for (const [path, text] of await agentDocs()) if (!(await readText(path))) await writeText(path, text);
+    vault.docsChecked = true;
+  }
   const format = S.vaultFormat || 'mdhtml';
   const writes = [];
   for (const pg of S.pages) {
@@ -2615,7 +2634,7 @@ async function blobSha(text) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-1', all))].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 const isVaultPath = p => p === META_FILE || /^[^/]+\/[^/]+\.md(\.html)?$/i.test(p);
-const GH_README = '# Braindead data\n\nThis private repository is written by [Braindead](https://github.com/VicoDeLaVega/braindead): one folder per database, one file per page, and `_braindead.json` for databases and views. Every sync is a commit — browse the history to see or restore any version of a page.\n';
+const GH_README = '# Braindead data\n\nThis private repository is written by [Braindead](https://github.com/VicoDeLaVega/braindead): one folder per database, one file per page, and `_braindead.json` for databases and views. Every sync is a commit — browse the history to see or restore any version of a page.\n\nAI agents can add and edit pages here: see `AGENTS.md`.\n';
 
 async function ghHead() {
   try { return (await ghApi('GET', `/repos/${gh.repo}/git/ref/heads/${gh.branch}`)).object.sha; }
@@ -2624,7 +2643,7 @@ async function ghHead() {
 async function ghTree(head) {
   const commit = await ghApi('GET', `/repos/${gh.repo}/git/commits/${head}`);
   const tree = await ghApi('GET', `/repos/${gh.repo}/git/trees/${commit.tree.sha}?recursive=1`);
-  return { treeSha: commit.tree.sha, files: Object.fromEntries(tree.tree.filter(x => x.type === 'blob' && isVaultPath(x.path)).map(x => [x.path, x.sha])) };
+  return { treeSha: commit.tree.sha, all: new Set(tree.tree.map(x => x.path)), files: Object.fromEntries(tree.tree.filter(x => x.type === 'blob' && isVaultPath(x.path)).map(x => [x.path, x.sha])) };
 }
 // Applies what changed on GitHub since this device's last sync. The most recent edit wins.
 async function ghPull(remote) {
@@ -2639,7 +2658,7 @@ async function ghPull(remote) {
   }
   const dbOf = Object.fromEntries(Object.entries(vaultLayout().folders).map(([id, f]) => [f.toLowerCase(), dbById(id)]));
   const byPath = Object.fromEntries(Object.entries(gh.pages).map(([id, p]) => [p.path, id]));
-  const pending = [], seen = new Set();
+  const pending = [], seen = new Set(), completed = [];
   for (const [path, sha] of Object.entries(remote.files)) {
     if (path === META_FILE || gh.files[path] === sha) continue;
     const db = dbOf[path.split('/')[0].toLowerCase()];
@@ -2654,7 +2673,9 @@ async function ghPull(remote) {
       if (parsed.id && !pageById(parsed.id)) pg.id = parsed.id;
       S.pages.push(pg);
     }
+    const wasDone = isDone(pg);
     Object.assign(pg, { db: db.id, title: parsed.title, icon: parsed.icon, props: parsed.props, content: parsed.content, updated: edited });
+    if (!wasDone && isDone(pg)) completed.push(pg);
     if (parsed.created) pg.created = parsed.created;
     if (parsed.order != null) pg.order = parsed.order;
     for (const [p, titles] of parsed.pending) pending.push([pg, p, titles]);
@@ -2667,6 +2688,7 @@ async function ghPull(remote) {
     const ids = target ? titles.map(t => pagesOf(target).find(x => norm(x.title) === norm(t))?.id).filter(Boolean) : [];
     if (ids.length) pg.props[p.id] = ids; else delete pg.props[p.id];
   }
+  for (const pg of completed) onCompleted(pg);
   // Pages deleted on another device (unless edited here since). A renamed page shows up as
   // "old file gone + new file": it was seen above under its new name, so it is not deleted.
   for (const path of Object.keys(gh.files)) {
@@ -2690,9 +2712,12 @@ async function ghPush(head, remote) {
   for (const path of Object.keys(remote.files)) {
     if (!next[path]) { entries.push({ path, mode: '100644', type: 'blob', sha: null }); removed++; }
   }
+  for (const [path, text] of await agentDocs()) {
+    if (!remote.all.has(path)) entries.push({ path, mode: '100644', type: 'blob', content: text });
+  }
   if (entries.length) {
     const tree = await ghApi('POST', `/repos/${gh.repo}/git/trees`, { base_tree: remote.treeSha, tree: entries });
-    const what = [added && `${added} added`, updated && `${updated} updated`, removed && `${removed} deleted`].filter(Boolean).join(', ');
+    const what = [added && `${added} added`, updated && `${updated} updated`, removed && `${removed} deleted`].filter(Boolean).join(', ') || 'add the guide for AI agents';
     const commit = await ghApi('POST', `/repos/${gh.repo}/git/commits`, { message: `Braindead: ${what}`, tree: tree.sha, parents: [head] });
     await ghApi('PATCH', `/repos/${gh.repo}/git/refs/heads/${gh.branch}`, { sha: commit.sha });
     gh.head = commit.sha;

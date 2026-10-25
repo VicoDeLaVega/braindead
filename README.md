@@ -24,6 +24,7 @@ Built to keep track of tasks, projects, groceries, paperwork and recurring bills
 - **Apps**: extra HTML pages (budget tracker, habit tracker…) that live in `apps/`, show up in the sidebar and can read and write your databases. Ask Claude Code to build one — see below.
 - **Vault folder** (Chrome / Edge desktop), like Obsidian: every page is also saved as a readable file — one folder per database, one file per page. Put the folder in Google Drive, Dropbox or OneDrive to back it up online and share it between computers. Edits made in the files come back into Braindead.
 - **Back up to GitHub**: sync everything into a private GitHub repository — every sync is a commit, so you keep the full history of every page, and it works on phones too.
+- **AI agents can write into it**: vaults, zips and data repos include an `AGENTS.md` ([docs/agent-guide.md](docs/agent-guide.md)) explaining the file format, so Claude Code or any agent can add or edit pages — “add these 5 groceries”, “create a task for each email I need to answer”.
 - Global search with `Ctrl+K`, mobile layout, installable as an app (PWA), works offline.
 
 Starter templates: Tasks, Projects, Groceries, Paperwork, Bills & reminders (with sample items you can delete).
