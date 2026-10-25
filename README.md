@@ -23,6 +23,7 @@ Built to keep track of tasks, projects, groceries, paperwork and recurring bills
 - **9 themes**: Snow, Sand, Mint, Lavender, Peach, Sky, Paper, Night, Ink.
 - **Apps**: extra HTML pages (budget tracker, habit tracker…) that live in `apps/`, show up in the sidebar and can read and write your databases. Ask Claude Code to build one — see below.
 - **Vault folder** (Chrome / Edge desktop), like Obsidian: every page is also saved as a readable file — one folder per database, one file per page. Put the folder in Google Drive, Dropbox or OneDrive to back it up online and share it between computers. Edits made in the files come back into Braindead.
+- **Back up to GitHub**: sync everything into a private GitHub repository — every sync is a commit, so you keep the full history of every page, and it works on phones too.
 - Global search with `Ctrl+K`, mobile layout, installable as an app (PWA), works offline.
 
 Starter templates: Tasks, Projects, Groceries, Paperwork, Bills & reminders (with sample items you can delete).
@@ -81,6 +82,7 @@ Ask for a quote for:
 
 You can edit the files by hand: change a property, tick a checkbox, add a new property line or even create a new file — Braindead picks it up.
 
+- **Back up to GitHub** (any browser, phones included): create a private repository and a token limited to it, paste them in Braindead (the app shows the exact steps). Braindead then commits the vault files when it opens and every 10 minutes, and pulls changes made on your other devices. Each commit lists what changed; GitHub's history lets you see or restore any version of a page. The token is stored only in your browser — never in your data, your vault, your zip or any repository.
 - **Export (.zip)** downloads your whole vault as a zip — works in every browser, phones included. Unzip it and you get the same readable folder. **Import (.zip)** loads one back (any vault folder zipped by hand works too, as do older `.json` backups) — handy to move your data to a phone or another browser.
 
 ## Run locally

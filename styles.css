@@ -597,3 +597,14 @@ select.in { padding-right: 4px; }
 .fmt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 2px; cursor: pointer; color: var(--muted); font-size: 13.5px; }
 .fmt b { color: var(--text); }
 .fmt input { margin-top: 4px; accent-color: var(--accent); }
+.gh-step { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.gh-n { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.gh-body { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+.gh-body b { color: var(--text); font-weight: 600; }
+.gh-body a, .tip a { color: var(--accent); }
+.gh-body code { background: var(--surface2); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+.gh-form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; max-width: 380px; }
+a.btn { text-decoration: none; color: inherit; }
+.btn:disabled { opacity: .6; cursor: default; }
+.gh-step > div { flex: 1; min-width: 0; }
+.gh-form .in { width: 100%; }
