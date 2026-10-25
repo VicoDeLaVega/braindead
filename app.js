@@ -1,66 +1,66 @@
 'use strict';
 /*
- * Mon espace — pages, bases et vues façon Notion/Coda, 100 % statique.
- * Les données vivent dans le localStorage du navigateur (exportables en JSON).
+ * Braindead — Notion/Coda-style pages, databases and views, 100% static.
+ * Data lives in the browser's localStorage (exportable as JSON).
  */
 
-/* ================= Constantes ================= */
+/* ================= Constants ================= */
 const KEY = 'monespace.v1';
 const NOTIF_KEY = 'monespace.notified';
 
 const COLORS = ['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red'];
-const COLOR_NAMES = { gray: 'Gris', brown: 'Brun', orange: 'Orange', yellow: 'Jaune', green: 'Vert', blue: 'Bleu', purple: 'Violet', pink: 'Rose', red: 'Rouge' };
+const COLOR_NAMES = { gray: 'Grey', brown: 'Brown', orange: 'Orange', yellow: 'Yellow', green: 'Green', blue: 'Blue', purple: 'Purple', pink: 'Pink', red: 'Red' };
 const TYPES = {
-  text: { label: 'Texte', icon: '≡' },
-  number: { label: 'Nombre', icon: '#' },
-  select: { label: 'Sélection', icon: '◉' },
-  multi: { label: 'Multi-sélection', icon: '☷' },
+  text: { label: 'Text', icon: '≡' },
+  number: { label: 'Number', icon: '#' },
+  select: { label: 'Select', icon: '◉' },
+  multi: { label: 'Multi-select', icon: '☷' },
   date: { label: 'Date', icon: '◷' },
-  checkbox: { label: 'Case à cocher', icon: '☑' },
-  url: { label: 'Lien', icon: '↗' },
+  checkbox: { label: 'Checkbox', icon: '☑' },
+  url: { label: 'URL', icon: '↗' },
   relation: { label: 'Relation', icon: '⇄' },
-  recur: { label: 'Récurrence', icon: '↻' },
+  recur: { label: 'Recurrence', icon: '↻' },
 };
-const RECUR = { '': 'Aucune', weekly: 'Chaque semaine', monthly: 'Chaque mois', quarterly: 'Chaque trimestre', yearly: 'Chaque année' };
-const NUM_FORMATS = { number: 'Nombre', euro: 'Euro (€)', percent: 'Pourcentage (%)' };
+const RECUR = { '': 'None', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
+const NUM_FORMATS = { number: 'Number', euro: 'Euro (€)', percent: 'Percent (%)' };
 const VIEW_TYPES = {
-  table: { label: 'Tableau', icon: '▤' },
+  table: { label: 'Table', icon: '▤' },
   kanban: { label: 'Kanban', icon: '▥' },
-  list: { label: 'Liste', icon: '☰' },
-  calendar: { label: 'Calendrier', icon: '◫' },
+  list: { label: 'List', icon: '☰' },
+  calendar: { label: 'Calendar', icon: '◫' },
 };
 const THEMES = [
-  { id: 'neige', name: 'Neige', bg: '#ffffff', ac: '#2f80ed' },
-  { id: 'sable', name: 'Sable', bg: '#f3ece1', ac: '#c2683a' },
-  { id: 'menthe', name: 'Menthe', bg: '#e8f4ee', ac: '#1f9d6b' },
-  { id: 'lavande', name: 'Lavande', bg: '#efeafb', ac: '#7c5cd6' },
-  { id: 'peche', name: 'Pêche', bg: '#fdeae2', ac: '#e8684a' },
-  { id: 'ciel', name: 'Ciel', bg: '#e6effc', ac: '#2b6fd6' },
-  { id: 'papier', name: 'Papier', bg: '#ece4d4', ac: '#8a6d3b' },
-  { id: 'nuit', name: 'Nuit', bg: '#202020', ac: '#5aa2d6' },
-  { id: 'encre', name: 'Encre', bg: '#141e2e', ac: '#7aa2f7' },
+  { id: 'neige', name: 'Snow', bg: '#ffffff', ac: '#2f80ed' },
+  { id: 'sable', name: 'Sand', bg: '#f3ece1', ac: '#c2683a' },
+  { id: 'menthe', name: 'Mint', bg: '#e8f4ee', ac: '#1f9d6b' },
+  { id: 'lavande', name: 'Lavender', bg: '#efeafb', ac: '#7c5cd6' },
+  { id: 'peche', name: 'Peach', bg: '#fdeae2', ac: '#e8684a' },
+  { id: 'ciel', name: 'Sky', bg: '#e6effc', ac: '#2b6fd6' },
+  { id: 'papier', name: 'Paper', bg: '#ece4d4', ac: '#8a6d3b' },
+  { id: 'nuit', name: 'Night', bg: '#202020', ac: '#5aa2d6' },
+  { id: 'encre', name: 'Ink', bg: '#141e2e', ac: '#7aa2f7' },
 ];
 const EMOJIS = ['📋', '✅', '📌', '🎯', '⭐', '🔥', '💡', '📝', '📁', '📂', '🗂️', '📄', '🧾', '📮', '✉️', '🏦', '💳', '💶',
   '💰', '🧮', '🏠', '🔑', '🛠️', '🔧', '🚗', '⛽', '🏥', '💊', '🦷', '🎓', '💼', '💻', '📱', '📅', '⏰', '🔔',
   '🛒', '🧺', '🍎', '🥕', '🥖', '🧀', '🥛', '🥚', '🍝', '🍷', '☕', '🧴', '🧻', '🧼', '🐶', '🐱', '🌱', '🌻',
   '✈️', '🏖️', '🎁', '📦', '🎨', '🎵', '📚', '🏃', '🧘', '❤️', '👶', '🎉', '🛁', '🔌', '📺', '🌍', '⚖️', '🪪'];
 const TEMPLATES = [
-  ['vide', '📁', 'Vide', 'Un statut et une date, à personnaliser'],
-  ['taches', '✅', 'Tâches', 'Statut, priorité, échéance, projet'],
-  ['projets', '🎯', 'Projets', 'Avancement, dates, priorité, tags'],
-  ['courses', '🛒', 'Courses', 'Rayons, quantités, magasin, acheté'],
-  ['admin', '🗂️', 'Papiers admin', 'Démarches, organismes, échéances'],
-  ['paiements', '💶', 'Paiements & rappels', 'Montants, récurrence, payé'],
+  ['vide', '📁', 'Blank', 'A status and a date, ready to customise'],
+  ['taches', '✅', 'Tasks', 'Status, priority, due date, project'],
+  ['projets', '🎯', 'Projects', 'Progress, dates, priority, tags'],
+  ['courses', '🛒', 'Groceries', 'Aisles, quantities, store, bought'],
+  ['admin', '🗂️', 'Paperwork', 'Admin tasks, organisations, deadlines'],
+  ['paiements', '💶', 'Bills & reminders', 'Amounts, recurrence, paid'],
 ];
 
-/* ================= Utilitaires ================= */
+/* ================= Utilities ================= */
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
 let seq = 0;
 const norm = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const isEmpty = v => v == null || v === '' || v === false || (Array.isArray(v) && !v.length);
 const enterBlur = e => { if (e.key === 'Enter') e.target.blur(); };
-const EUR = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+const EUR = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' });
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -86,7 +86,7 @@ function append(el, kids) {
   }
 }
 
-/* --- Dates (format ISO AAAA-MM-JJ, heure locale) --- */
+/* --- Dates (ISO YYYY-MM-DD, local time) --- */
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseD = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -103,15 +103,15 @@ function fmtDate(s, withYear) {
   const d = parseD(s);
   const o = { day: 'numeric', month: 'short' };
   if (withYear || d.getFullYear() !== new Date().getFullYear()) o.year = 'numeric';
-  return d.toLocaleDateString('fr-FR', o);
+  return d.toLocaleDateString('en-GB', o);
 }
 function relDate(s) {
   const n = diffDays(s, todayISO());
-  if (n === 0) return "Aujourd'hui";
-  if (n === 1) return 'Demain';
-  if (n === -1) return 'Hier';
-  if (n < 0) return `${fmtDate(s)} · retard ${-n} j`;
-  if (n < 7) return parseD(s).toLocaleDateString('fr-FR', { weekday: 'long' });
+  if (n === 0) return 'Today';
+  if (n === 1) return 'Tomorrow';
+  if (n === -1) return 'Yesterday';
+  if (n < 0) return `${fmtDate(s)} · ${-n}d late`;
+  if (n < 7) return parseD(s).toLocaleDateString('en-GB', { weekday: 'long' });
   return fmtDate(s);
 }
 function nextDate(s, r) {
@@ -124,19 +124,19 @@ function nextDate(s, r) {
 const normUrl = u => /^[a-z][a-z0-9+.-]*:/i.test(u) ? u : 'https://' + u;
 const prettyUrl = u => String(u).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
 
-/* ================= État ================= */
-let S; // initialisé au démarrage (bas du fichier)
+/* ================= State ================= */
+let S; // initialised at startup (bottom of file)
 const ui = { route: { name: 'home' }, routeKey: '', peek: null, peekWide: false, search: '', cal: {}, dragId: null };
 
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(KEY));
     if (d && Array.isArray(d.dbs) && Array.isArray(d.pages)) return migrate(d);
-  } catch (e) { /* données illisibles : on repart des exemples */ }
+  } catch (e) { /* unreadable data: start again from the examples */ }
   return seed();
 }
 function migrate(d) {
-  d.name ||= 'Mon espace';
+  d.name ||= 'Braindead';
   d.theme ||= 'neige';
   for (const db of d.dbs) {
     db.views ||= [];
@@ -149,7 +149,7 @@ function save() { clearTimeout(saveT); saveT = setTimeout(saveNow, 150); }
 function saveNow() {
   clearTimeout(saveT);
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
-  catch (e) { toast("Impossible d'enregistrer : stockage du navigateur plein ?"); }
+  catch (e) { toast("Couldn't save: is the browser storage full?"); }
 }
 window.addEventListener('beforeunload', saveNow);
 window.addEventListener('pagehide', saveNow);
@@ -198,7 +198,7 @@ function setDone(pg, done) {
   const sp = db.props.find(p => p.type === 'select' && p.options.some(o => o.done));
   if (sp) setProp(pg, sp, done ? sp.options.find(o => o.done).id : (sp.options.find(o => !o.done)?.id || null));
 }
-// Une tâche récurrente terminée est reprogrammée à l'échéance suivante.
+// A completed recurring item is rescheduled to its next due date.
 function onCompleted(pg) {
   const db = dbById(pg.db);
   const rp = db.props.find(p => p.type === 'recur');
@@ -214,16 +214,16 @@ function onCompleted(pg) {
       if (first) pg.props[p.id] = first.id; else delete pg.props[p.id];
     }
   }
-  pg.content = (pg.content || '') + `<p class="log">✓ Échéance du ${fmtDate(d, true)} réglée le ${fmtDate(todayISO(), true)}</p>`;
+  pg.content = (pg.content || '') + `<p class="log">✓ Due ${fmtDate(d, true)} — done on ${fmtDate(todayISO(), true)}</p>`;
   touch(pg);
-  toast(`↻ « ${pg.title || 'Sans titre'} » reprogrammé au ${fmtDate(next, true)}`);
+  toast(`↻ “${pg.title || 'Untitled'}” rescheduled to ${fmtDate(next, true)}`);
 }
 
-/* ================= Modèles & exemples ================= */
+/* ================= Templates & examples ================= */
 const opt = (name, color, done) => (done ? { id: uid(), name, color, done: true } : { id: uid(), name, color });
 const mkProp = (name, type, extra = {}) => ({ id: uid(), name, type, ...(type === 'select' || type === 'multi' ? { options: [] } : {}), ...extra });
 const mkView = (name, type, extra = {}) => ({ id: uid(), name, type, filters: [], sort: null, hideDone: false, hidden: [], ...extra });
-const prioOpts = () => [opt('Haute', 'red'), opt('Moyenne', 'orange'), opt('Basse', 'gray')];
+const prioOpts = () => [opt('High', 'red'), opt('Medium', 'orange'), opt('Low', 'gray')];
 
 function makeDb(kind, ctx = {}) {
   const P = {};
@@ -231,101 +231,101 @@ function makeDb(kind, ctx = {}) {
   switch (kind) {
     case 'taches':
       db = {
-        name: 'Tâches', icon: '✅', props: [
-          P.statut = mkProp('Statut', 'select', { options: [opt('À faire', 'gray'), opt('En cours', 'blue'), opt('En attente', 'yellow'), opt('Fait', 'green', true)] }),
-          P.prio = mkProp('Priorité', 'select', { options: prioOpts() }),
-          P.ech = mkProp('Échéance', 'date', { due: true }),
-          P.cat = mkProp('Catégorie', 'multi', { options: [opt('Perso', 'purple'), opt('Maison', 'brown'), opt('Travail', 'blue'), opt('Santé', 'green')] }),
-          ctx.projets ? (P.projet = mkProp('Projet', 'relation', { target: ctx.projets })) : null,
-          P.lien = mkProp('Lien', 'url'),
+        name: 'Tasks', icon: '✅', props: [
+          P.statut = mkProp('Status', 'select', { options: [opt('To do', 'gray'), opt('In progress', 'blue'), opt('Waiting', 'yellow'), opt('Done', 'green', true)] }),
+          P.prio = mkProp('Priority', 'select', { options: prioOpts() }),
+          P.ech = mkProp('Due date', 'date', { due: true }),
+          P.cat = mkProp('Category', 'multi', { options: [opt('Personal', 'purple'), opt('Home', 'brown'), opt('Work', 'blue'), opt('Health', 'green')] }),
+          ctx.projets ? (P.projet = mkProp('Project', 'relation', { target: ctx.projets })) : null,
+          P.lien = mkProp('Link', 'url'),
         ].filter(Boolean),
       };
       db.views = [
-        mkView('Par statut', 'kanban', { groupBy: P.statut.id }),
-        mkView('Tableau', 'table', { sort: { prop: P.ech.id, dir: 1 } }),
-        mkView('Par priorité', 'kanban', { groupBy: P.prio.id, hideDone: true }),
-        mkView('Calendrier', 'calendar', { dateProp: P.ech.id }),
+        mkView('By status', 'kanban', { groupBy: P.statut.id }),
+        mkView('Table', 'table', { sort: { prop: P.ech.id, dir: 1 } }),
+        mkView('By priority', 'kanban', { groupBy: P.prio.id, hideDone: true }),
+        mkView('Calendar', 'calendar', { dateProp: P.ech.id }),
       ];
       break;
     case 'projets':
       db = {
-        name: 'Projets', icon: '🎯', props: [
-          P.statut = mkProp('Statut', 'select', { options: [opt('Idée', 'gray'), opt('Planifié', 'purple'), opt('En cours', 'blue'), opt('En pause', 'yellow'), opt('Terminé', 'green', true)] }),
-          P.prio = mkProp('Priorité', 'select', { options: prioOpts() }),
-          P.debut = mkProp('Début', 'date'),
-          P.fin = mkProp('Fin', 'date', { due: true }),
-          P.avancement = mkProp('Avancement', 'number', { format: 'percent' }),
-          P.tags = mkProp('Tags', 'multi', { options: [opt('Maison', 'brown'), opt('Loisirs', 'pink'), opt('Pro', 'blue'), opt('Famille', 'orange')] }),
-          P.lien = mkProp('Lien', 'url'),
+        name: 'Projects', icon: '🎯', props: [
+          P.statut = mkProp('Status', 'select', { options: [opt('Idea', 'gray'), opt('Planned', 'purple'), opt('In progress', 'blue'), opt('On hold', 'yellow'), opt('Done', 'green', true)] }),
+          P.prio = mkProp('Priority', 'select', { options: prioOpts() }),
+          P.debut = mkProp('Start', 'date'),
+          P.fin = mkProp('End', 'date', { due: true }),
+          P.avancement = mkProp('Progress', 'number', { format: 'percent' }),
+          P.tags = mkProp('Tags', 'multi', { options: [opt('Home', 'brown'), opt('Leisure', 'pink'), opt('Pro', 'blue'), opt('Family', 'orange')] }),
+          P.lien = mkProp('Link', 'url'),
         ],
       };
       db.views = [
-        mkView('Par statut', 'kanban', { groupBy: P.statut.id }),
-        mkView('Tableau', 'table', { sort: { prop: P.fin.id, dir: 1 } }),
-        mkView('Calendrier', 'calendar', { dateProp: P.fin.id }),
+        mkView('By status', 'kanban', { groupBy: P.statut.id }),
+        mkView('Table', 'table', { sort: { prop: P.fin.id, dir: 1 } }),
+        mkView('Calendar', 'calendar', { dateProp: P.fin.id }),
       ];
       break;
     case 'courses':
       db = {
-        name: 'Courses', icon: '🛒', props: [
-          P.rayon = mkProp('Rayon', 'select', { options: [opt('Fruits & légumes', 'green'), opt('Frais', 'blue'), opt('Boulangerie', 'brown'), opt('Épicerie', 'orange'), opt('Boissons', 'purple'), opt('Surgelés', 'gray'), opt('Hygiène', 'pink'), opt('Maison', 'yellow')] }),
-          P.qte = mkProp('Quantité', 'text'),
-          P.magasin = mkProp('Magasin', 'select', { options: [opt('Supermarché', 'blue'), opt('Marché', 'green'), opt('Bio', 'yellow'), opt('Pharmacie', 'red')] }),
-          P.achete = mkProp('Acheté', 'checkbox', { done: true }),
-          P.prix = mkProp('Prix', 'number', { format: 'euro' }),
+        name: 'Groceries', icon: '🛒', props: [
+          P.rayon = mkProp('Aisle', 'select', { options: [opt('Fruit & veg', 'green'), opt('Fresh', 'blue'), opt('Bakery', 'brown'), opt('Pantry', 'orange'), opt('Drinks', 'purple'), opt('Frozen', 'gray'), opt('Toiletries', 'pink'), opt('Home', 'yellow')] }),
+          P.qte = mkProp('Quantity', 'text'),
+          P.magasin = mkProp('Store', 'select', { options: [opt('Supermarket', 'blue'), opt('Market', 'green'), opt('Organic', 'yellow'), opt('Pharmacy', 'red')] }),
+          P.achete = mkProp('Bought', 'checkbox', { done: true }),
+          P.prix = mkProp('Price', 'number', { format: 'euro' }),
         ],
       };
       db.views = [
-        mkView('À acheter', 'kanban', { groupBy: P.rayon.id, hideDone: true }),
-        mkView('Liste', 'list', { sort: { prop: P.rayon.id, dir: 1 }, hidden: [P.prix.id] }),
-        mkView('Par magasin', 'kanban', { groupBy: P.magasin.id, hideDone: true }),
+        mkView('To buy', 'kanban', { groupBy: P.rayon.id, hideDone: true }),
+        mkView('List', 'list', { sort: { prop: P.rayon.id, dir: 1 }, hidden: [P.prix.id] }),
+        mkView('By store', 'kanban', { groupBy: P.magasin.id, hideDone: true }),
       ];
       break;
     case 'admin':
       db = {
-        name: 'Papiers admin', icon: '🗂️', props: [
-          P.statut = mkProp('Statut', 'select', { options: [opt('À faire', 'gray'), opt('En cours', 'blue'), opt('En attente de réponse', 'yellow'), opt('Terminé', 'green', true)] }),
-          P.type = mkProp('Type', 'select', { options: [opt('Impôts', 'red'), opt('Banque', 'blue'), opt('Santé', 'green'), opt('Logement', 'brown'), opt('Assurance', 'purple'), opt('Voiture', 'orange'), opt('Travail', 'gray'), opt('Identité', 'pink')] }),
-          P.ech = mkProp('Échéance', 'date', { due: true }),
-          P.organisme = mkProp('Organisme', 'text'),
-          P.prio = mkProp('Priorité', 'select', { options: prioOpts() }),
-          P.lien = mkProp('Lien', 'url'),
+        name: 'Paperwork', icon: '🗂️', props: [
+          P.statut = mkProp('Status', 'select', { options: [opt('To do', 'gray'), opt('In progress', 'blue'), opt('Awaiting reply', 'yellow'), opt('Done', 'green', true)] }),
+          P.type = mkProp('Type', 'select', { options: [opt('Taxes', 'red'), opt('Bank', 'blue'), opt('Health', 'green'), opt('Housing', 'brown'), opt('Insurance', 'purple'), opt('Car', 'orange'), opt('Work', 'gray'), opt('ID', 'pink')] }),
+          P.ech = mkProp('Due date', 'date', { due: true }),
+          P.organisme = mkProp('Organisation', 'text'),
+          P.prio = mkProp('Priority', 'select', { options: prioOpts() }),
+          P.lien = mkProp('Link', 'url'),
         ],
       };
       db.views = [
-        mkView('Par statut', 'kanban', { groupBy: P.statut.id }),
-        mkView('Tableau', 'table', { sort: { prop: P.ech.id, dir: 1 } }),
-        mkView('Par type', 'kanban', { groupBy: P.type.id, hideDone: true }),
-        mkView('Calendrier', 'calendar', { dateProp: P.ech.id }),
+        mkView('By status', 'kanban', { groupBy: P.statut.id }),
+        mkView('Table', 'table', { sort: { prop: P.ech.id, dir: 1 } }),
+        mkView('By type', 'kanban', { groupBy: P.type.id, hideDone: true }),
+        mkView('Calendar', 'calendar', { dateProp: P.ech.id }),
       ];
       break;
     case 'paiements':
       db = {
-        name: 'Paiements & rappels', icon: '💶', props: [
-          P.montant = mkProp('Montant', 'number', { format: 'euro' }),
-          P.ech = mkProp('Échéance', 'date', { due: true }),
-          P.recur = mkProp('Récurrence', 'recur'),
-          P.paye = mkProp('Payé', 'checkbox', { done: true }),
-          P.cat = mkProp('Catégorie', 'select', { options: [opt('Loyer', 'brown'), opt('Énergie', 'yellow'), opt('Internet & tél.', 'blue'), opt('Assurance', 'purple'), opt('Abonnement', 'pink'), opt('Impôts', 'red'), opt('Crédit', 'orange'), opt('Autre', 'gray')] }),
-          P.moyen = mkProp('Moyen', 'select', { options: [opt('Prélèvement', 'gray'), opt('Virement', 'blue'), opt('Carte', 'green'), opt('Chèque', 'orange')] }),
-          P.lien = mkProp('Lien', 'url'),
+        name: 'Bills & reminders', icon: '💶', props: [
+          P.montant = mkProp('Amount', 'number', { format: 'euro' }),
+          P.ech = mkProp('Due date', 'date', { due: true }),
+          P.recur = mkProp('Recurrence', 'recur'),
+          P.paye = mkProp('Paid', 'checkbox', { done: true }),
+          P.cat = mkProp('Category', 'select', { options: [opt('Rent', 'brown'), opt('Energy', 'yellow'), opt('Internet & phone', 'blue'), opt('Insurance', 'purple'), opt('Subscription', 'pink'), opt('Taxes', 'red'), opt('Loan', 'orange'), opt('Other', 'gray')] }),
+          P.moyen = mkProp('Method', 'select', { options: [opt('Direct debit', 'gray'), opt('Transfer', 'blue'), opt('Card', 'green'), opt('Cheque', 'orange')] }),
+          P.lien = mkProp('Link', 'url'),
         ],
       };
       db.views = [
-        mkView('À venir', 'table', { sort: { prop: P.ech.id, dir: 1 }, hideDone: true }),
-        mkView('Calendrier', 'calendar', { dateProp: P.ech.id }),
-        mkView('Par catégorie', 'kanban', { groupBy: P.cat.id }),
+        mkView('Upcoming', 'table', { sort: { prop: P.ech.id, dir: 1 }, hideDone: true }),
+        mkView('Calendar', 'calendar', { dateProp: P.ech.id }),
+        mkView('By category', 'kanban', { groupBy: P.cat.id }),
       ];
       break;
     default:
       db = {
-        name: 'Nouvelle base', icon: '📁', props: [
-          P.statut = mkProp('Statut', 'select', { options: [opt('À faire', 'gray'), opt('En cours', 'blue'), opt('Fait', 'green', true)] }),
+        name: 'New database', icon: '📁', props: [
+          P.statut = mkProp('Status', 'select', { options: [opt('To do', 'gray'), opt('In progress', 'blue'), opt('Done', 'green', true)] }),
           P.date = mkProp('Date', 'date', { due: true }),
           P.tags = mkProp('Tags', 'multi'),
         ],
       };
-      db.views = [mkView('Tableau', 'table'), mkView('Kanban', 'kanban', { groupBy: P.statut.id })];
+      db.views = [mkView('Table', 'table'), mkView('Kanban', 'kanban', { groupBy: P.statut.id })];
   }
   db.id = uid();
   db.tpl = kind;
@@ -339,7 +339,7 @@ function resolveVal(p, v) {
   return v;
 }
 function seed() {
-  const data = { version: 1, name: 'Mon espace', theme: 'neige', dbs: [], pages: [] };
+  const data = { version: 1, name: 'Braindead', theme: 'neige', dbs: [], pages: [] };
   const T = todayISO(), d = n => addDays(T, n);
   const add = (x, title, vals = {}, extra = {}) => {
     const pg = newPage(x.db, title);
@@ -355,44 +355,44 @@ function seed() {
   const pa = makeDb('paiements');
   data.dbs.push(ta.db, pr.db, co.db, ad.db, pa.db);
 
-  const sdb = add(pr, 'Rénover la salle de bain', { statut: 'En cours', prio: 'Haute', debut: d(-20), fin: d(40), avancement: 35, tags: ['Maison'] }, { icon: '🛁',
-    content: '<h2>Objectif</h2><p>Remplacer la douche et le lavabo avant l’hiver.</p><h3>Budget</h3><ul><li>Carrelage : 600 €</li><li>Plombier : 900 €</li></ul>' });
-  const vac = add(pr, "Vacances d'été", { statut: 'Planifié', prio: 'Moyenne', fin: d(120), avancement: 10, tags: ['Famille', 'Loisirs'] }, { icon: '🏖️' });
-  add(pr, "Apprendre l'espagnol", { statut: 'Idée', prio: 'Basse', tags: ['Loisirs'] }, { icon: '📚' });
+  const sdb = add(pr, 'Renovate the bathroom', { statut: 'In progress', prio: 'High', debut: d(-20), fin: d(40), avancement: 35, tags: ['Home'] }, { icon: '🛁',
+    content: '<h2>Goal</h2><p>Replace the shower and sink before winter.</p><h3>Budget</h3><ul><li>Tiles: €600</li><li>Plumber: €900</li></ul>' });
+  const vac = add(pr, 'Summer holidays', { statut: 'Planned', prio: 'Medium', fin: d(120), avancement: 10, tags: ['Family', 'Leisure'] }, { icon: '🏖️' });
+  add(pr, 'Learn Spanish', { statut: 'Idea', prio: 'Low', tags: ['Leisure'] }, { icon: '📚' });
 
-  add(ta, 'Appeler le plombier', { statut: 'En cours', prio: 'Haute', ech: d(1), cat: ['Maison'], projet: [sdb.id] }, {
-    content: '<p>Demander un devis pour :</p><ul class="checklist"><li data-done="true">Douche</li><li>Lavabo</li><li>Robinetterie</li></ul>' });
-  add(ta, 'Choisir le carrelage', { statut: 'À faire', prio: 'Moyenne', ech: d(5), cat: ['Maison'], projet: [sdb.id] });
-  add(ta, 'Prendre RDV chez le dentiste', { statut: 'À faire', prio: 'Haute', ech: d(-1), cat: ['Santé'] }, { icon: '🦷' });
-  add(ta, 'Réserver le logement', { statut: 'À faire', prio: 'Moyenne', ech: d(14), cat: ['Perso'], projet: [vac.id] });
-  add(ta, 'Trier la boîte mail', { statut: 'Fait', prio: 'Basse', cat: ['Perso'] });
+  add(ta, 'Call the plumber', { statut: 'In progress', prio: 'High', ech: d(1), cat: ['Home'], projet: [sdb.id] }, {
+    content: '<p>Ask for a quote for:</p><ul class="checklist"><li data-done="true">Shower</li><li>Sink</li><li>Taps</li></ul>' });
+  add(ta, 'Choose the tiles', { statut: 'To do', prio: 'Medium', ech: d(5), cat: ['Home'], projet: [sdb.id] });
+  add(ta, 'Book a dentist appointment', { statut: 'To do', prio: 'High', ech: d(-1), cat: ['Health'] }, { icon: '🦷' });
+  add(ta, 'Book accommodation', { statut: 'To do', prio: 'Medium', ech: d(14), cat: ['Personal'], projet: [vac.id] });
+  add(ta, 'Clean up the inbox', { statut: 'Done', prio: 'Low', cat: ['Personal'] });
 
-  add(co, 'Pommes', { rayon: 'Fruits & légumes', qte: '1 kg', magasin: 'Marché' });
-  add(co, 'Tomates', { rayon: 'Fruits & légumes', qte: '6', magasin: 'Marché' });
-  add(co, 'Lait', { rayon: 'Frais', qte: '2 L', magasin: 'Supermarché' });
-  add(co, 'Yaourts nature', { rayon: 'Frais', qte: '8', magasin: 'Supermarché' });
-  add(co, 'Baguette', { rayon: 'Boulangerie', qte: '1' });
-  add(co, 'Pâtes', { rayon: 'Épicerie', qte: '2 paquets', magasin: 'Supermarché' });
-  add(co, 'Café', { rayon: 'Épicerie', magasin: 'Bio', achete: true });
-  add(co, 'Liquide vaisselle', { rayon: 'Maison', magasin: 'Supermarché' });
-  add(co, 'Dentifrice', { rayon: 'Hygiène', magasin: 'Pharmacie' });
+  add(co, 'Apples', { rayon: 'Fruit & veg', qte: '1 kg', magasin: 'Market' });
+  add(co, 'Tomatoes', { rayon: 'Fruit & veg', qte: '6', magasin: 'Market' });
+  add(co, 'Milk', { rayon: 'Fresh', qte: '2 L', magasin: 'Supermarket' });
+  add(co, 'Plain yoghurt', { rayon: 'Fresh', qte: '8', magasin: 'Supermarket' });
+  add(co, 'Baguette', { rayon: 'Bakery', qte: '1' });
+  add(co, 'Pasta', { rayon: 'Pantry', qte: '2 packs', magasin: 'Supermarket' });
+  add(co, 'Coffee', { rayon: 'Pantry', magasin: 'Organic', achete: true });
+  add(co, 'Washing-up liquid', { rayon: 'Home', magasin: 'Supermarket' });
+  add(co, 'Toothpaste', { rayon: 'Toiletries', magasin: 'Pharmacy' });
 
-  add(ad, 'Déclaration de revenus', { statut: 'À faire', type: 'Impôts', ech: d(10), organisme: 'impots.gouv.fr', prio: 'Haute', lien: 'https://www.impots.gouv.fr' }, { icon: '🧾',
-    content: '<ul class="checklist"><li>Récupérer les attestations</li><li>Vérifier les frais réels</li><li>Signer en ligne</li></ul>' });
-  add(ad, "Renouveler la carte d'identité", { statut: 'En cours', type: 'Identité', ech: d(30), organisme: 'Mairie', prio: 'Moyenne', lien: 'https://ants.gouv.fr' }, { icon: '🪪' });
-  add(ad, 'Envoyer la feuille de soins', { statut: 'En attente de réponse', type: 'Santé', ech: d(-3), organisme: 'CPAM', prio: 'Basse' });
-  add(ad, "Attestation d'assurance habitation", { statut: 'Terminé', type: 'Assurance', organisme: 'Assureur' });
+  add(ad, 'Income tax return', { statut: 'To do', type: 'Taxes', ech: d(10), organisme: 'impots.gouv.fr', prio: 'High', lien: 'https://www.impots.gouv.fr' }, { icon: '🧾',
+    content: '<ul class="checklist"><li>Gather the statements</li><li>Check deductible expenses</li><li>Sign online</li></ul>' });
+  add(ad, 'Renew ID card', { statut: 'In progress', type: 'ID', ech: d(30), organisme: 'Town hall', prio: 'Medium', lien: 'https://ants.gouv.fr' }, { icon: '🪪' });
+  add(ad, 'Send the medical claim form', { statut: 'Awaiting reply', type: 'Health', ech: d(-3), organisme: 'CPAM', prio: 'Low' });
+  add(ad, 'Home insurance certificate', { statut: 'Done', type: 'Insurance', organisme: 'Insurer' });
 
-  add(pa, 'Loyer', { montant: 850, ech: d(6), recur: 'monthly', cat: 'Loyer', moyen: 'Virement' }, { icon: '🏠' });
-  add(pa, 'Électricité', { montant: 74.5, ech: d(2), recur: 'monthly', cat: 'Énergie', moyen: 'Prélèvement' }, { icon: '🔌' });
-  add(pa, 'Box internet', { montant: 29.99, ech: d(-1), recur: 'monthly', cat: 'Internet & tél.', moyen: 'Carte' });
-  add(pa, 'Streaming', { montant: 13.49, ech: d(12), recur: 'monthly', cat: 'Abonnement', moyen: 'Carte' }, { icon: '📺' });
-  add(pa, 'Assurance auto', { montant: 420, ech: d(45), recur: 'yearly', cat: 'Assurance', moyen: 'Prélèvement' }, { icon: '🚗' });
-  add(pa, 'Taxe foncière', { montant: 980, ech: d(60), recur: 'yearly', cat: 'Impôts', moyen: 'Virement', lien: 'https://www.impots.gouv.fr' });
+  add(pa, 'Rent', { montant: 850, ech: d(6), recur: 'monthly', cat: 'Rent', moyen: 'Transfer' }, { icon: '🏠' });
+  add(pa, 'Electricity', { montant: 74.5, ech: d(2), recur: 'monthly', cat: 'Energy', moyen: 'Direct debit' }, { icon: '🔌' });
+  add(pa, 'Internet', { montant: 29.99, ech: d(-1), recur: 'monthly', cat: 'Internet & phone', moyen: 'Card' });
+  add(pa, 'Streaming', { montant: 13.49, ech: d(12), recur: 'monthly', cat: 'Subscription', moyen: 'Card' }, { icon: '📺' });
+  add(pa, 'Car insurance', { montant: 420, ech: d(45), recur: 'yearly', cat: 'Insurance', moyen: 'Direct debit' }, { icon: '🚗' });
+  add(pa, 'Property tax', { montant: 980, ech: d(60), recur: 'yearly', cat: 'Taxes', moyen: 'Transfer', lien: 'https://www.impots.gouv.fr' });
   return data;
 }
 
-/* ================= Rendu global ================= */
+/* ================= Global rendering ================= */
 function applyTheme() {
   document.documentElement.dataset.theme = S.theme;
   const meta = $('meta[name=theme-color]');
@@ -431,7 +431,7 @@ function updateTitle() {
 }
 const openCount = db => pagesOf(db).filter(p => !isDone(p)).length;
 
-/* ================= Barre latérale ================= */
+/* ================= Sidebar ================= */
 function renderSidebar() {
   const sb = $('#sidebar');
   const urgent = dueItems().filter(i => i.n <= 0).length;
@@ -440,28 +440,28 @@ function renderSidebar() {
   append(sb, [
     h('div', { class: 'sb-head' },
       h('div', { class: 'logo' }, '◆'),
-      h('input', { class: 'ws-name', value: S.name, 'aria-label': "Nom de l'espace", onchange: e => { S.name = e.target.value.trim() || 'Mon espace'; save(); updateTitle(); }, onkeydown: enterBlur })),
-    h('button', { class: 'sb-item', onclick: openQuickFind }, h('span', { class: 'sb-ico' }, '⌕'), 'Rechercher', h('kbd', null, 'Ctrl K')),
+      h('input', { class: 'ws-name', value: S.name, 'aria-label': 'Workspace name', onchange: e => { S.name = e.target.value.trim() || 'Braindead'; save(); updateTitle(); }, onkeydown: enterBlur })),
+    h('button', { class: 'sb-item', onclick: openQuickFind }, h('span', { class: 'sb-ico' }, '⌕'), 'Search', h('kbd', null, 'Ctrl K')),
     h('a', { class: 'sb-item' + (ui.route.name === 'home' ? ' active' : ''), href: '#/home' },
-      h('span', { class: 'sb-ico' }, '⌂'), h('span', { class: 'sb-txt' }, 'Accueil'), urgent ? h('span', { class: 'sb-badge', title: 'En retard ou pour aujourd’hui' }, urgent) : null),
-    h('div', { class: 'sb-label' }, 'BASES', h('button', { class: 'icon-btn sm', title: 'Nouvelle base', onclick: openNewDb }, '+')),
+      h('span', { class: 'sb-ico' }, '⌂'), h('span', { class: 'sb-txt' }, 'Home'), urgent ? h('span', { class: 'sb-badge', title: 'Overdue or due today' }, urgent) : null),
+    h('div', { class: 'sb-label' }, 'DATABASES', h('button', { class: 'icon-btn sm', title: 'New database', onclick: openNewDb }, '+')),
     S.dbs.map(db => h('a', { class: 'sb-item' + (ui.route.id === db.id && ui.route.name === 'db' ? ' active' : ''), href: '#/db/' + db.id },
       h('span', { class: 'sb-ico' }, db.icon || '📄'), h('span', { class: 'sb-txt' }, db.name), h('span', { class: 'sb-count' }, openCount(db)))),
     h('div', { class: 'sb-spacer' }),
-    h('div', { class: 'sb-label' }, 'THÈME', h('span', { class: 'sb-count' }, THEMES.find(t => t.id === S.theme)?.name)),
+    h('div', { class: 'sb-label' }, 'THEME', h('span', { class: 'sb-count' }, THEMES.find(t => t.id === S.theme)?.name)),
     h('div', { class: 'themes' }, THEMES.map(t => h('button', {
-      class: 'swatch' + (S.theme === t.id ? ' on' : ''), title: t.name, 'aria-label': 'Thème ' + t.name,
+      class: 'swatch' + (S.theme === t.id ? ' on' : ''), title: t.name, 'aria-label': 'Theme ' + t.name,
       style: { background: t.bg, '--ac': t.ac }, onclick: () => { S.theme = t.id; save(); render(); },
     }))),
     h('div', { class: 'sb-tools' },
-      h('button', { class: 'sb-item', onclick: enableNotifs }, h('span', { class: 'sb-ico' }, '🔔'), notifOn ? 'Rappels activés' : 'Activer les rappels'),
-      h('button', { class: 'sb-item', onclick: exportICS }, h('span', { class: 'sb-ico' }, '📅'), 'Exporter vers agenda (.ics)'),
-      h('button', { class: 'sb-item', onclick: exportJSON }, h('span', { class: 'sb-ico' }, '⬇'), 'Sauvegarder (.json)'),
-      h('button', { class: 'sb-item', onclick: () => $('#import-file').click() }, h('span', { class: 'sb-ico' }, '⬆'), 'Restaurer une sauvegarde')),
+      h('button', { class: 'sb-item', onclick: enableNotifs }, h('span', { class: 'sb-ico' }, '🔔'), notifOn ? 'Reminders on' : 'Enable reminders'),
+      h('button', { class: 'sb-item', onclick: exportICS }, h('span', { class: 'sb-ico' }, '📅'), 'Export to calendar (.ics)'),
+      h('button', { class: 'sb-item', onclick: exportJSON }, h('span', { class: 'sb-ico' }, '⬇'), 'Back up (.json)'),
+      h('button', { class: 'sb-item', onclick: () => $('#import-file').click() }, h('span', { class: 'sb-ico' }, '⬆'), 'Restore a backup')),
   ]);
 }
 
-/* ================= Zone principale ================= */
+/* ================= Main area ================= */
 function renderMain() {
   const main = $('#main');
   const key = ui.route.name + (ui.route.id || '');
@@ -474,7 +474,7 @@ function renderMain() {
   main.scrollTop = keep;
 }
 
-/* ---------- Accueil ---------- */
+/* ---------- Home ---------- */
 function renderHome(main) {
   const T = todayISO();
   const items = dueItems();
@@ -482,30 +482,30 @@ function renderHome(main) {
   const week = items.filter(i => i.n > 0 && i.n <= 7), later = items.filter(i => i.n > 7 && i.n <= 31);
   const toPay = items.filter(i => i.amt && i.n <= 30).reduce((s, i) => s + Number(i.amt), 0);
   const hr = new Date().getHours();
-  const greet = hr < 5 ? 'Bonne nuit' : hr < 18 ? 'Bonjour' : 'Bonsoir';
+  const greet = hr < 5 ? 'Good night' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
   const notifOk = !('Notification' in window) || Notification.permission !== 'default';
 
   const agItem = i => {
     const row = h('div', { class: 'ag-item', onclick: () => openPeek(i.pg.id) },
       hasDoneMarker(i.db) ? h('input', {
-        type: 'checkbox', class: 'chk', title: 'Marquer comme fait', onclick: e => e.stopPropagation(),
+        type: 'checkbox', class: 'chk', title: 'Mark as done', onclick: e => e.stopPropagation(),
         onchange: () => { row.classList.add('leaving'); setTimeout(() => { setDone(i.pg, true); refresh(); }, 280); },
       }) : null,
       h('div', { class: 'ag-main' },
-        h('div', { class: 'ag-title' }, i.pg.icon ? i.pg.icon + ' ' : '', i.pg.title || 'Sans titre'),
+        h('div', { class: 'ag-title' }, i.pg.icon ? i.pg.icon + ' ' : '', i.pg.title || 'Untitled'),
         h('div', { class: 'ag-sub' }, h('span', null, i.db.icon, ' ', i.db.name), i.amt ? h('b', null, EUR.format(i.amt)) : null)),
       dateBadge(i.d, false));
     return row;
   };
   const agCol = (title, list, cls) => h('div', { class: 'ag-col ' + (cls || '') },
     h('h2', null, title, h('span', { class: 'n' }, list.length)),
-    list.length ? list.map(agItem) : h('div', { class: 'ag-empty' }, 'Rien ici 🎉'));
+    list.length ? list.map(agItem) : h('div', { class: 'ag-empty' }, 'Nothing here 🎉'));
 
-  // Ajout rapide
+  // Quick add
   const dbsWithTitle = S.dbs;
-  const qaIn = h('input', { class: 'qa-in', placeholder: 'Ajouter rapidement… (Entrée)' });
-  const qaDb = h('select', { class: 'in', 'aria-label': 'Base' }, dbsWithTitle.map(db => h('option', { value: db.id, selected: db.id === S.lastQa }, db.icon + ' ' + db.name)));
-  const qaDate = h('input', { type: 'date', class: 'in', title: 'Échéance (facultatif)' });
+  const qaIn = h('input', { class: 'qa-in', placeholder: 'Quick add… (Enter)' });
+  const qaDb = h('select', { class: 'in', 'aria-label': 'Database' }, dbsWithTitle.map(db => h('option', { value: db.id, selected: db.id === S.lastQa }, db.icon + ' ' + db.name)));
+  const qaDate = h('input', { type: 'date', class: 'in', title: 'Due date (optional)' });
   const qaGo = () => {
     const title = qaIn.value.trim();
     if (!title) return qaIn.focus();
@@ -517,7 +517,7 @@ function renderHome(main) {
     S.pages.push(newPage(db, title, props));
     S.lastQa = db.id;
     save(); refresh();
-    toast(`Ajouté à ${db.icon} ${db.name}`, { label: 'Ouvrir', fn: () => go('#/db/' + db.id) });
+    toast(`Added to ${db.icon} ${db.name}`, { label: 'Open', fn: () => go('#/db/' + db.id) });
     $('.qa-in')?.focus();
   };
   qaIn.addEventListener('keydown', e => { if (e.key === 'Enter') qaGo(); });
@@ -526,37 +526,37 @@ function renderHome(main) {
 
   main.append(h('div', { class: 'page-wrap home' },
     h('h1', null, greet + ' 👋'),
-    h('div', { class: 'sub' }, new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })),
-    notifOk ? null : h('div', { class: 'tip' }, '🔔', h('span', null, 'Recevez une notification pour ce qui arrive à échéance (quand l’app est ouverte).'),
-      h('button', { class: 'btn', onclick: enableNotifs }, 'Activer')),
+    h('div', { class: 'sub' }, new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })),
+    notifOk ? null : h('div', { class: 'tip' }, '🔔', h('span', null, 'Get a notification when something is due (while the app is open).'),
+      h('button', { class: 'btn', onclick: enableNotifs }, 'Enable')),
     h('div', { class: 'stats' },
-      h('div', { class: 'stat late' }, h('div', { class: 'v' }, late.length), h('div', { class: 'l' }, 'En retard')),
-      h('div', { class: 'stat today' }, h('div', { class: 'v' }, today.length), h('div', { class: 'l' }, "Pour aujourd'hui")),
-      h('div', { class: 'stat' }, h('div', { class: 'v' }, week.length), h('div', { class: 'l' }, '7 prochains jours')),
-      h('div', { class: 'stat money' }, h('div', { class: 'v' }, EUR.format(toPay)), h('div', { class: 'l' }, 'À payer sous 30 jours'))),
-    h('div', { class: 'qa' }, qaIn, qaDb, qaDate, h('button', { class: 'btn primary', onclick: qaGo }, 'Ajouter')),
+      h('div', { class: 'stat late' }, h('div', { class: 'v' }, late.length), h('div', { class: 'l' }, 'Overdue')),
+      h('div', { class: 'stat today' }, h('div', { class: 'v' }, today.length), h('div', { class: 'l' }, 'Due today')),
+      h('div', { class: 'stat' }, h('div', { class: 'v' }, week.length), h('div', { class: 'l' }, 'Next 7 days')),
+      h('div', { class: 'stat money' }, h('div', { class: 'v' }, EUR.format(toPay)), h('div', { class: 'l' }, 'To pay within 30 days'))),
+    h('div', { class: 'qa' }, qaIn, qaDb, qaDate, h('button', { class: 'btn primary', onclick: qaGo }, 'Add')),
     h('div', { class: 'agenda' },
-      agCol('En retard', late, 'late'), agCol("Aujourd'hui", today), agCol('Cette semaine', week), agCol('Plus tard (30 j)', later)),
-    h('h2', null, 'Bases'),
+      agCol('Overdue', late, 'late'), agCol('Today', today), agCol('This week', week), agCol('Later (30 days)', later)),
+    h('h2', null, 'Databases'),
     h('div', { class: 'bases' },
       S.dbs.map(db => {
         const all = pagesOf(db).length, open = openCount(db);
         return h('a', { class: 'base-card', href: '#/db/' + db.id },
           h('div', { class: 'bi' }, db.icon || '📄'), h('div', { class: 'bn' }, db.name),
-          h('div', { class: 'bs' }, hasDoneMarker(db) ? `${open} en cours · ${all} au total` : `${all} pages`),
+          h('div', { class: 'bs' }, hasDoneMarker(db) ? `${open} open · ${all} total` : `${all} pages`),
           hasDoneMarker(db) && all ? h('span', { class: 'bar' }, h('i', { style: { width: Math.round((all - open) / all * 100) + '%' } })) : null);
       }),
-      h('button', { class: 'base-card new', onclick: openNewDb }, '+ Nouvelle base')),
-    recent.length ? [h('h2', null, 'Modifié récemment'), h('div', { class: 'recent' }, recent.map(pg => {
+      h('button', { class: 'base-card new', onclick: openNewDb }, '+ New database')),
+    recent.length ? [h('h2', null, 'Recently edited'), h('div', { class: 'recent' }, recent.map(pg => {
       const db = dbById(pg.db);
-      return h('a', { onclick: () => openPeek(pg.id) }, h('span', null, pg.icon || db?.icon || '📄'), h('span', null, pg.title || 'Sans titre'),
-        h('span', { class: 'rd' }, db?.name, ' · ', new Date(pg.updated).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })));
+      return h('a', { onclick: () => openPeek(pg.id) }, h('span', null, pg.icon || db?.icon || '📄'), h('span', null, pg.title || 'Untitled'),
+        h('span', { class: 'rd' }, db?.name, ' · ', new Date(pg.updated).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })));
     }))] : null,
   ));
   void T;
 }
 
-/* ---------- Base ---------- */
+/* ---------- Database ---------- */
 function renderDb(main, db) {
   const view = activeView(db);
   const nf = view.filters.length;
@@ -568,24 +568,24 @@ function renderDb(main, db) {
   };
   main.append(h('div', { class: 'page-wrap wide' },
     h('header', { class: 'db-head' },
-      h('button', { class: 'db-icon', title: "Changer l'icône", onclick: e => emojiPicker(e.currentTarget, v => { db.icon = v || '📄'; save(); render(); }) }, db.icon || '📄'),
-      h('input', { class: 'db-title', value: db.name, 'aria-label': 'Nom de la base', onchange: e => { db.name = e.target.value.trim() || 'Sans titre'; save(); renderSidebar(); }, onkeydown: enterBlur })),
+      h('button', { class: 'db-icon', title: 'Change icon', onclick: e => emojiPicker(e.currentTarget, v => { db.icon = v || '📄'; save(); render(); }) }, db.icon || '📄'),
+      h('input', { class: 'db-title', value: db.name, 'aria-label': 'Database name', onchange: e => { db.name = e.target.value.trim() || 'Untitled'; save(); renderSidebar(); }, onkeydown: enterBlur })),
     h('div', { class: 'view-tabs' },
       db.views.map(v => h('button', {
         class: 'view-tab' + (v.id === view.id ? ' on' : ''),
         onclick: e => { if (v.id === view.id) return viewPop(e.currentTarget, db, v); db.activeView = v.id; save(); renderMain(); },
-        title: v.id === view.id ? 'Cliquer pour configurer la vue' : '',
+        title: v.id === view.id ? 'Click to configure this view' : '',
       }, h('span', { class: 'vt-ico' }, VIEW_TYPES[v.type]?.icon), v.name)),
-      h('button', { class: 'view-tab add', title: 'Nouvelle vue', onclick: e => addViewMenu(e.currentTarget, db) }, '+')),
+      h('button', { class: 'view-tab add', title: 'New view', onclick: e => addViewMenu(e.currentTarget, db) }, '+')),
     h('div', { class: 'toolbar' },
-      h('label', { class: 'search' }, '⌕', h('input', { placeholder: 'Rechercher…', value: ui.search, oninput: e => { ui.search = e.target.value; renderBody(); } })),
-      h('button', { class: 'tool' + (nf ? ' on' : ''), onclick: e => filterPop(e.currentTarget, db, view) }, nf ? `Filtres · ${nf}` : 'Filtrer'),
-      h('button', { class: 'tool' + (view.sort ? ' on' : ''), onclick: e => sortPop(e.currentTarget, db, view) }, view.sort ? 'Trié' : 'Trier'),
+      h('label', { class: 'search' }, '⌕', h('input', { placeholder: 'Search…', value: ui.search, oninput: e => { ui.search = e.target.value; renderBody(); } })),
+      h('button', { class: 'tool' + (nf ? ' on' : ''), onclick: e => filterPop(e.currentTarget, db, view) }, nf ? `Filters · ${nf}` : 'Filter'),
+      h('button', { class: 'tool' + (view.sort ? ' on' : ''), onclick: e => sortPop(e.currentTarget, db, view) }, view.sort ? 'Sorted' : 'Sort'),
       hasDoneMarker(db) ? h('button', { class: 'tool' + (view.hideDone ? ' on' : ''), onclick: () => { view.hideDone = !view.hideDone; save(); renderMain(); } },
-        view.hideDone ? 'Terminés masqués' : 'Masquer terminés') : null,
-      h('button', { class: 'tool', onclick: e => viewPop(e.currentTarget, db, view) }, 'Vue ⚙'),
-      h('button', { class: 'tool', onclick: () => openSchema(db) }, 'Propriétés'),
-      h('button', { class: 'btn primary', onclick: () => createAndOpen(db, defaultsFor(view)) }, '+ Nouveau')),
+        view.hideDone ? 'Done hidden' : 'Hide done') : null,
+      h('button', { class: 'tool', onclick: e => viewPop(e.currentTarget, db, view) }, 'View ⚙'),
+      h('button', { class: 'tool', onclick: () => openSchema(db) }, 'Properties'),
+      h('button', { class: 'btn primary', onclick: () => createAndOpen(db, defaultsFor(view)) }, '+ New')),
     body));
   renderBody();
 }
@@ -609,7 +609,7 @@ function createAndOpen(db, props = {}) {
 }
 function quickAdd(db, view) {
   return h('input', {
-    class: 'quick-add', placeholder: '+ Ajouter… (Entrée)',
+    class: 'quick-add', placeholder: '+ Add… (Enter)',
     onkeydown: e => {
       if (e.key !== 'Enter' || !e.target.value.trim()) return;
       S.pages.push(newPage(db, e.target.value.trim(), defaultsFor(view)));
@@ -619,7 +619,7 @@ function quickAdd(db, view) {
   });
 }
 
-/* ---------- Filtrage / tri ---------- */
+/* ---------- Filtering / sorting ---------- */
 function searchText(db, pg) {
   const parts = [pg.title];
   for (const p of db.props) {
@@ -633,18 +633,18 @@ function searchText(db, pg) {
   parts.push((pg.content || '').replace(/<[^>]+>/g, ' '));
   return norm(parts.filter(Boolean).join(' '));
 }
-const OPS_TEXT = [['contains', 'contient'], ['notcontains', 'ne contient pas'], ['empty', 'est vide'], ['notempty', "n'est pas vide"]];
-const OPS_SEL = [['is', 'est'], ['isnot', "n'est pas"], ['empty', 'est vide'], ['notempty', "n'est pas vide"]];
-const OPS_MULTI = [['has', 'contient'], ['hasnot', 'ne contient pas'], ['empty', 'est vide'], ['notempty', "n'est pas vide"]];
+const OPS_TEXT = [['contains', 'contains'], ['notcontains', 'does not contain'], ['empty', 'is empty'], ['notempty', 'is not empty']];
+const OPS_SEL = [['is', 'is'], ['isnot', 'is not'], ['empty', 'is empty'], ['notempty', 'is not empty']];
+const OPS_MULTI = [['has', 'contains'], ['hasnot', 'does not contain'], ['empty', 'is empty'], ['notempty', 'is not empty']];
 const OPS = {
   text: OPS_TEXT, url: OPS_TEXT, select: OPS_SEL, recur: OPS_SEL, multi: OPS_MULTI, relation: OPS_MULTI,
-  number: [['eq', '='], ['gt', '>'], ['lt', '<'], ['empty', 'est vide'], ['notempty', "n'est pas vide"]],
-  checkbox: [['checked', 'est coché'], ['unchecked', "n'est pas coché"]],
-  date: [['overdue', 'en retard'], ['today', "aujourd'hui"], ['week', '7 prochains jours'], ['month', '30 prochains jours'],
-    ['future', 'à venir'], ['past', 'passée'], ['empty', 'est vide'], ['notempty', "n'est pas vide"]],
+  number: [['eq', '='], ['gt', '>'], ['lt', '<'], ['empty', 'is empty'], ['notempty', 'is not empty']],
+  checkbox: [['checked', 'is checked'], ['unchecked', 'is not checked']],
+  date: [['overdue', 'overdue'], ['today', 'today'], ['week', 'next 7 days'], ['month', 'next 30 days'],
+    ['future', 'upcoming'], ['past', 'past'], ['empty', 'is empty'], ['notempty', 'is not empty']],
 };
 const NEEDS_VALUE = new Set(['contains', 'notcontains', 'eq', 'gt', 'lt', 'is', 'isnot', 'has', 'hasnot']);
-const fieldOf = (db, id) => id === 'title' ? { id: 'title', name: 'Nom', type: 'text' } : propOf(db, id);
+const fieldOf = (db, id) => id === 'title' ? { id: 'title', name: 'Name', type: 'text' } : propOf(db, id);
 
 function testFilter(db, pg, f) {
   const p = fieldOf(db, f.prop);
@@ -690,9 +690,9 @@ function cmpPages(db, pid, a, b) {
     case 'checkbox': return (x ? 1 : 0) - (y ? 1 : 0);
     case 'select': return idx(x) - idx(y);
     case 'multi': return idx(x[0]) - idx(y[0]);
-    case 'relation': return String(pageById(x[0])?.title || '').localeCompare(String(pageById(y[0])?.title || ''), 'fr');
+    case 'relation': return String(pageById(x[0])?.title || '').localeCompare(String(pageById(y[0])?.title || ''), 'en');
     case 'recur': return Object.keys(RECUR).indexOf(x) - Object.keys(RECUR).indexOf(y);
-    default: return String(x).localeCompare(String(y), 'fr', { sensitivity: 'base', numeric: true });
+    default: return String(x).localeCompare(String(y), 'en', { sensitivity: 'base', numeric: true });
   }
 }
 function applyView(db, view) {
@@ -705,7 +705,7 @@ function applyView(db, view) {
     const { prop, dir } = view.sort;
     ps.sort((a, b) => {
       const c = cmpPages(db, prop, a, b);
-      // les valeurs vides restent en bas quel que soit le sens
+      // empty values stay at the bottom whatever the direction
       const ea = isEmpty(prop === 'title' ? a.title : a.props[prop]), eb = isEmpty(prop === 'title' ? b.title : b.props[prop]);
       if (ea !== eb && !['created', 'updated', 'title'].includes(prop) && fieldOf(db, prop)?.type !== 'checkbox') return ea ? 1 : -1;
       return c * dir || (a.order || 0) - (b.order || 0);
@@ -714,17 +714,17 @@ function applyView(db, view) {
   return ps;
 }
 
-/* ---------- Affichage des valeurs ---------- */
+/* ---------- Value display ---------- */
 const chip = o => h('span', { class: 'chip c-' + (o.color || 'gray') }, o.name);
 function dateBadge(v, done) {
   const n = diffDays(v, todayISO());
   const cls = done ? '' : n < 0 ? 'late' : n === 0 ? 'today' : n <= 3 ? 'soon' : '';
-  return h('span', { class: 'date ' + cls, title: parseD(v).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) }, relDate(v));
+  return h('span', { class: 'date ' + cls, title: parseD(v).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) }, relDate(v));
 }
 function fmtNum(p, v) {
   if (p.format === 'euro') return EUR.format(v);
   if (p.format === 'percent') return `${v} %`;
-  return Number(v).toLocaleString('fr-FR');
+  return Number(v).toLocaleString('en-GB');
 }
 function renderValue(p, v, done) {
   if (isEmpty(v) && !(p.type === 'number' && v === 0)) return null;
@@ -733,7 +733,7 @@ function renderValue(p, v, done) {
     case 'multi': { const os = v.map(id => p.options.find(o => o.id === id)).filter(Boolean); return os.length ? os.map(chip) : null; }
     case 'relation': {
       const ps = v.map(pageById).filter(Boolean);
-      return ps.length ? ps.map(x => h('span', { class: 'rel-chip', onclick: e => { e.stopPropagation(); openPeek(x.id); } }, (x.icon || '📄') + ' ' + (x.title || 'Sans titre'))) : null;
+      return ps.length ? ps.map(x => h('span', { class: 'rel-chip', onclick: e => { e.stopPropagation(); openPeek(x.id); } }, (x.icon || '📄') + ' ' + (x.title || 'Untitled'))) : null;
     }
     case 'date': return dateBadge(v, done);
     case 'checkbox': return h('span', { class: 'chk-ro' }, '✓ ' + p.name);
@@ -745,16 +745,16 @@ function renderValue(p, v, done) {
   }
 }
 
-/* ---------- Éditeurs de propriétés ---------- */
+/* ---------- Property editors ---------- */
 function editor(pg, p, where) {
   const v = pg.props[p.id];
   const commit = val => { setProp(pg, p, val); refresh(); };
-  const ph = where === 'peek' ? h('span', { class: 'ph' }, 'Vide') : null;
+  const ph = where === 'peek' ? h('span', { class: 'ph' }, 'Empty') : null;
   switch (p.type) {
     case 'text': case 'url': case 'number': {
       const inp = h('input', {
         class: 'cell-in', type: p.type === 'number' ? 'number' : 'text', value: v ?? '', step: 'any',
-        placeholder: where === 'peek' ? (p.type === 'url' ? 'https://…' : 'Vide') : '',
+        placeholder: where === 'peek' ? (p.type === 'url' ? 'https://…' : 'Empty') : '',
         oninput: e => {
           const raw = e.target.value;
           setProp(pg, p, p.type === 'number' ? (raw === '' ? null : Number(raw)) : raw);
@@ -762,7 +762,7 @@ function editor(pg, p, where) {
         onchange: () => { if (where === 'peek') softMain(); },
         onkeydown: enterBlur,
       });
-      if (p.type === 'url' && v) return h('div', { class: 'url-ed' }, inp, h('a', { href: normUrl(v), target: '_blank', rel: 'noopener', class: 'url-go', title: 'Ouvrir le lien' }, '↗'));
+      if (p.type === 'url' && v) return h('div', { class: 'url-ed' }, inp, h('a', { href: normUrl(v), target: '_blank', rel: 'noopener', class: 'url-go', title: 'Open link' }, '↗'));
       if (p.type === 'number' && p.format && p.format !== 'number') return h('div', { class: 'num-ed' }, inp, h('span', { class: 'suffix' }, p.format === 'euro' ? '€' : '%'));
       return inp;
     }
@@ -781,7 +781,7 @@ function editor(pg, p, where) {
   return h('span');
 }
 
-/* ---------- Vue Tableau ---------- */
+/* ---------- Table view ---------- */
 function toggleSort(view, pid) {
   if (view.sort?.prop === pid) view.sort = view.sort.dir === 1 ? { prop: pid, dir: -1 } : null;
   else view.sort = { prop: pid, dir: 1 };
@@ -792,17 +792,17 @@ const sortMark = (view, pid) => view.sort?.prop === pid ? (view.sort.dir === 1 ?
 function renderTable(body, db, view, pages) {
   const props = visibleProps(db, view);
   const head = h('tr', null,
-    h('th', { onclick: () => toggleSort(view, 'title') }, h('span', { class: 'ti' }, 'Aa'), 'Nom', sortMark(view, 'title')),
-    props.map(p => h('th', { onclick: () => toggleSort(view, p.id), title: 'Trier par ' + p.name }, h('span', { class: 'ti' }, TYPES[p.type].icon), p.name, sortMark(view, p.id))),
-    h('th', { class: 'th-add', title: 'Ajouter une propriété', onclick: () => openSchema(db, true) }, '+'));
+    h('th', { onclick: () => toggleSort(view, 'title') }, h('span', { class: 'ti' }, 'Aa'), 'Name', sortMark(view, 'title')),
+    props.map(p => h('th', { onclick: () => toggleSort(view, p.id), title: 'Sort by ' + p.name }, h('span', { class: 'ti' }, TYPES[p.type].icon), p.name, sortMark(view, p.id))),
+    h('th', { class: 'th-add', title: 'Add a property', onclick: () => openSchema(db, true) }, '+'));
   const rows = pages.map(pg => h('tr', { class: isDone(pg) ? 'done' : '' },
     h('td', { class: 'td-title' }, h('div', { class: 'tt' },
       pg.icon ? h('span', { class: 'pi' }, pg.icon) : null,
-      h('input', { class: 'cell-in title-in', value: pg.title, placeholder: 'Sans titre', oninput: e => { pg.title = e.target.value; touch(pg); }, onkeydown: enterBlur }),
-      h('button', { class: 'open-btn', onclick: () => openPeek(pg.id) }, 'Ouvrir'))),
+      h('input', { class: 'cell-in title-in', value: pg.title, placeholder: 'Untitled', oninput: e => { pg.title = e.target.value; touch(pg); }, onkeydown: enterBlur }),
+      h('button', { class: 'open-btn', onclick: () => openPeek(pg.id) }, 'Open'))),
     props.map(p => h('td', { class: 'td-' + p.type }, editor(pg, p, 'table'))),
     h('td')));
-  const foot = [h('span', null, `${pages.length} élément${pages.length > 1 ? 's' : ''}`)];
+  const foot = [h('span', null, `${pages.length} item${pages.length > 1 ? 's' : ''}`)];
   for (const p of props) if (p.type === 'number' && p.format === 'euro') {
     const sum = pages.reduce((s, pg) => s + (Number(pg.props[p.id]) || 0), 0);
     foot.push(h('span', null, `${p.name} : `, h('b', null, EUR.format(sum))));
@@ -814,7 +814,7 @@ function renderTable(body, db, view, pages) {
     h('div', { class: 'tbl-foot' }, foot));
 }
 
-/* ---------- Vue Kanban ---------- */
+/* ---------- Kanban view ---------- */
 function makeDraggable(el, pg) {
   el.draggable = true;
   el.addEventListener('dragstart', e => {
@@ -837,7 +837,7 @@ function card(pg, db, view, gp) {
   const meta = visibleProps(db, view).filter(p => p.id !== gp.id && !(p.type === 'checkbox' && p.done))
     .map(p => renderValue(p, pg.props[p.id], done)).filter(x => x != null);
   const c = h('div', { class: 'card' + (done ? ' done' : ''), 'data-id': pg.id, onclick: () => openPeek(pg.id) },
-    h('div', { class: 'card-title' }, pg.icon ? h('span', { class: 'pi' }, pg.icon) : null, pg.title ? h('span', null, pg.title) : h('span', { class: 'ph' }, 'Sans titre')),
+    h('div', { class: 'card-title' }, pg.icon ? h('span', { class: 'pi' }, pg.icon) : null, pg.title ? h('span', null, pg.title) : h('span', { class: 'ph' }, 'Untitled')),
     meta.length ? h('div', { class: 'card-meta' }, meta) : null);
   makeDraggable(c, pg);
   return c;
@@ -847,15 +847,15 @@ function renderKanban(body, db, view, pages) {
   if (!gp || !['select', 'checkbox'].includes(gp.type)) {
     const opts = db.props.filter(p => ['select', 'checkbox'].includes(p.type));
     body.append(h('div', { class: 'empty pick-group' },
-      h('p', null, 'Choisissez une propriété « Sélection » ou « Case à cocher » pour regrouper les cartes.'),
+      h('p', null, 'Pick a Select or Checkbox property to group the cards by.'),
       opts.length ? h('select', { class: 'in', onchange: e => { view.groupBy = e.target.value; save(); renderMain(); } },
-        h('option', { value: '' }, 'Grouper par…'), opts.map(p => h('option', { value: p.id }, p.name)))
-        : h('button', { class: 'btn', onclick: () => openSchema(db, true) }, 'Ajouter une propriété')));
+        h('option', { value: '' }, 'Group by…'), opts.map(p => h('option', { value: p.id }, p.name)))
+        : h('button', { class: 'btn', onclick: () => openSchema(db, true) }, 'Add a property')));
     return;
   }
   const groups = gp.type === 'checkbox'
-    ? [{ key: false, label: 'Non ' + gp.name.toLowerCase() }, { key: true, label: gp.name, color: 'green', done: gp.done }]
-    : [...gp.options.map(o => ({ key: o.id, label: o.name, color: o.color, done: o.done })), { key: null, label: 'Sans ' + gp.name.toLowerCase() }];
+    ? [{ key: false, label: 'Not ' + gp.name.toLowerCase() }, { key: true, label: gp.name, color: 'green', done: gp.done }]
+    : [...gp.options.map(o => ({ key: o.id, label: o.name, color: o.color, done: o.done })), { key: null, label: 'No ' + gp.name.toLowerCase() }];
   const keyOf = pg => gp.type === 'checkbox' ? !!pg.props[gp.id] : (gp.options.some(o => o.id === pg.props[gp.id]) ? pg.props[gp.id] : null);
   const ap = amountProp(db);
   const board = h('div', { class: 'board' });
@@ -871,9 +871,9 @@ function renderKanban(body, db, view, pages) {
         h('span', { class: 'chip c-' + (g.color || 'gray') }, (g.done ? '✓ ' : '') + g.label),
         h('span', { class: 'col-count' }, items.length),
         sum ? h('span', { class: 'col-sum' }, EUR.format(sum)) : null,
-        h('button', { class: 'icon-btn sm', title: 'Ajouter ici', onclick: addHere }, '+')),
+        h('button', { class: 'icon-btn sm', title: 'Add here', onclick: addHere }, '+')),
       list,
-      h('button', { class: 'col-add', onclick: addHere }, '+ Nouveau'));
+      h('button', { class: 'col-add', onclick: addHere }, '+ New'));
     col.addEventListener('dragover', e => {
       if (!ui.dragId) return;
       e.preventDefault();
@@ -904,7 +904,7 @@ function renderKanban(body, db, view, pages) {
   body.append(board);
 }
 
-/* ---------- Vue Liste ---------- */
+/* ---------- List view ---------- */
 function renderList(body, db, view, pages) {
   const marker = hasDoneMarker(db);
   const props = visibleProps(db, view).filter(p => !(p.type === 'checkbox' && p.done));
@@ -923,18 +923,18 @@ function renderList(body, db, view, pages) {
           },
         }) : null,
         pg.icon ? h('span', { class: 'pi' }, pg.icon) : null,
-        h('span', { class: 'lr-title' }, pg.title || 'Sans titre'),
+        h('span', { class: 'lr-title' }, pg.title || 'Untitled'),
         h('span', { class: 'lr-meta' }, props.map(p => renderValue(p, pg.props[p.id], done))));
       return row;
     }),
-    pages.length ? null : h('div', { class: 'empty', style: { marginTop: '14px' } }, ui.search || view.filters.length ? 'Aucun résultat.' : 'Rien pour l’instant — tapez ci-dessus pour ajouter.')));
+    pages.length ? null : h('div', { class: 'empty', style: { marginTop: '14px' } }, ui.search || view.filters.length ? 'No results.' : 'Nothing yet — type above to add one.')));
 }
 
-/* ---------- Vue Calendrier ---------- */
+/* ---------- Calendar view ---------- */
 function renderCalendar(body, db, view, pages) {
   const dp = propOf(db, view.dateProp) || dueProp(db);
   if (!dp || dp.type !== 'date') {
-    body.append(h('div', { class: 'empty' }, 'Cette base n’a pas de propriété Date.', h('br'), h('button', { class: 'btn', onclick: () => openSchema(db, true) }, 'Ajouter une propriété')));
+    body.append(h('div', { class: 'empty' }, 'This database has no Date property.', h('br'), h('button', { class: 'btn', onclick: () => openSchema(db, true) }, 'Add a property')));
     return;
   }
   const T = todayISO();
@@ -947,17 +947,17 @@ function renderCalendar(body, db, view, pages) {
   const shift = n => { const d = new Date(y, m - 1 + n, 1); ui.cal[view.id] = iso(d).slice(0, 7); renderMain(); };
   const undated = pages.filter(pg => !pg.props[dp.id]).length;
 
-  const grid = h('div', { class: 'cal-grid' }, ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'].map(d => h('div', { class: 'cal-dow' }, d)));
+  const grid = h('div', { class: 'cal-grid' }, ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => h('div', { class: 'cal-dow' }, d)));
   for (let i = 0; i < cells; i++) {
     const d = new Date(y, m - 1, 1 - offset + i), s = iso(d);
     const items = pages.filter(pg => pg.props[dp.id] === s);
     const cell = h('div', { class: 'cal-cell' + (d.getMonth() !== m - 1 ? ' out' : '') + (s === T ? ' today' : '') },
       h('div', { class: 'cal-day' }, h('span', null, d.getDate()),
-        h('button', { class: 'cal-add', title: 'Ajouter', onclick: () => createAndOpen(db, { ...defaultsFor(view), [dp.id]: s }) }, '+')),
+        h('button', { class: 'cal-add', title: 'Add', onclick: () => createAndOpen(db, { ...defaultsFor(view), [dp.id]: s }) }, '+')),
       items.map(pg => {
         const done = isDone(pg);
         const it = h('div', { class: 'cal-item' + (done ? ' done' : '') + (!done && s < T ? ' late' : ''), title: pg.title, onclick: () => openPeek(pg.id) },
-          (pg.icon ? pg.icon + ' ' : '') + (pg.title || 'Sans titre'));
+          (pg.icon ? pg.icon + ' ' : '') + (pg.title || 'Untitled'));
         makeDraggable(it, pg);
         return it;
       }));
@@ -973,11 +973,11 @@ function renderCalendar(body, db, view, pages) {
   }
   body.append(
     h('div', { class: 'cal-nav' },
-      h('button', { class: 'icon-btn', title: 'Mois précédent', onclick: () => shift(-1) }, '‹'),
-      h('div', { class: 'cal-title' }, first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })),
-      h('button', { class: 'icon-btn', title: 'Mois suivant', onclick: () => shift(1) }, '›'),
-      h('button', { class: 'tool', onclick: () => { delete ui.cal[view.id]; renderMain(); } }, "Aujourd'hui"),
-      undated ? h('span', { class: 'muted sm', style: { marginLeft: 'auto' } }, `${undated} sans date`) : null),
+      h('button', { class: 'icon-btn', title: 'Previous month', onclick: () => shift(-1) }, '‹'),
+      h('div', { class: 'cal-title' }, first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })),
+      h('button', { class: 'icon-btn', title: 'Next month', onclick: () => shift(1) }, '›'),
+      h('button', { class: 'tool', onclick: () => { delete ui.cal[view.id]; renderMain(); } }, 'Today'),
+      undated ? h('span', { class: 'muted sm', style: { marginLeft: 'auto' } }, `${undated} undated`) : null),
     grid);
 }
 
@@ -1011,7 +1011,7 @@ window.addEventListener('resize', closePop);
 
 function pickerMenu(anchor, { getItems, value, multi, onChange, onCreate }) {
   const sel = new Set(multi ? (value || []) : (value ? [value] : []));
-  const input = h('input', { class: 'menu-search', placeholder: onCreate ? 'Rechercher ou créer…' : 'Rechercher…' });
+  const input = h('input', { class: 'menu-search', placeholder: onCreate ? 'Search or create…' : 'Search…' });
   const list = h('div', { class: 'menu-list' });
   let first = null;
   const pick = id => {
@@ -1025,10 +1025,10 @@ function pickerMenu(anchor, { getItems, value, multi, onChange, onCreate }) {
     const all = getItems();
     const items = all.filter(it => norm(it.text).includes(q));
     first = items[0]?.id ?? null;
-    if (!multi && value && !q) list.append(h('div', { class: 'menu-item muted', onclick: () => { onChange(null); closePop(); } }, '✕ Retirer'));
+    if (!multi && value && !q) list.append(h('div', { class: 'menu-item muted', onclick: () => { onChange(null); closePop(); } }, '✕ Remove'));
     for (const it of items) list.append(h('div', { class: 'menu-item' + (sel.has(it.id) ? ' on' : ''), onclick: () => pick(it.id) }, it.node, sel.has(it.id) ? h('span', { class: 'check' }, '✓') : null));
-    if (q && onCreate && !all.some(it => norm(it.text) === q)) list.append(h('div', { class: 'menu-item create', onclick: create }, '+ Créer ', h('b', null, input.value.trim())));
-    if (!items.length && !q) list.append(h('div', { class: 'menu-empty' }, onCreate ? 'Tapez pour créer une option' : 'Aucun élément'));
+    if (q && onCreate && !all.some(it => norm(it.text) === q)) list.append(h('div', { class: 'menu-item create', onclick: create }, '+ Create ', h('b', null, input.value.trim())));
+    if (!items.length && !q) list.append(h('div', { class: 'menu-empty' }, onCreate ? 'Type to create an option' : 'No items'));
   }
   input.addEventListener('input', draw);
   input.addEventListener('keydown', e => {
@@ -1053,34 +1053,34 @@ function selectMenu(anchor, p, v, onChange) {
 }
 function relationMenu(anchor, p, v, onChange) {
   const target = dbById(p.target);
-  if (!target) return toast('La base liée n’existe plus — modifiez la propriété.');
+  if (!target) return toast('The linked database no longer exists — edit the property.');
   pickerMenu(anchor, {
     value: v, multi: true, onChange,
-    getItems: () => pagesOf(target).map(x => ({ id: x.id, text: x.title || 'Sans titre', node: h('span', null, (x.icon || target.icon || '📄') + ' ' + (x.title || 'Sans titre')) })),
+    getItems: () => pagesOf(target).map(x => ({ id: x.id, text: x.title || 'Untitled', node: h('span', null, (x.icon || target.icon || '📄') + ' ' + (x.title || 'Untitled')) })),
     onCreate: title => { const np = newPage(target, title); S.pages.push(np); save(); return np.id; },
   });
 }
 function datePop(anchor, v, onChange) {
   const T = todayISO();
   const inp = h('input', { type: 'date', value: v || '', onchange: e => { if (e.target.value) onChange(e.target.value); } });
-  const quick = [["Aujourd'hui", T], ['Demain', addDays(T, 1)], ['Dans une semaine', addDays(T, 7)], ['Dans un mois', addMonths(T, 1)]];
+  const quick = [['Today', T], ['Tomorrow', addDays(T, 1)], ['In a week', addDays(T, 7)], ['In a month', addMonths(T, 1)]];
   popover(anchor, h('div', { class: 'pop-body date-pop' },
     inp,
     h('div', { class: 'menu-list', style: { padding: 0 } },
       quick.map(([l, d]) => h('button', { class: 'menu-item', onclick: () => { onChange(d); closePop(); } }, l, h('span', { class: 'muted' }, fmtDate(d)))),
-      v ? h('button', { class: 'menu-item danger', onclick: () => { onChange(null); closePop(); } }, 'Effacer la date') : null)), { width: 250 });
+      v ? h('button', { class: 'menu-item danger', onclick: () => { onChange(null); closePop(); } }, 'Clear date') : null)), { width: 250 });
 }
 function emojiPicker(anchor, onPick) {
   popover(anchor, h('div', null,
     h('div', { class: 'emoji-grid' }, EMOJIS.map(e => h('button', { onclick: () => { onPick(e); closePop(); } }, e))),
-    h('div', { style: { padding: '0 8px 8px' } }, h('button', { class: 'link-btn', onclick: () => { onPick(''); closePop(); } }, 'Retirer l’icône'))));
+    h('div', { style: { padding: '0 8px 8px' } }, h('button', { class: 'link-btn', onclick: () => { onPick(''); closePop(); } }, 'Remove icon'))));
 }
 function colorPop(anchor, o, done) {
   popover(anchor, h('div', { class: 'colors' }, COLORS.map(c => h('button', { onclick: () => { o.color = c; closePop(); done(); } },
     h('span', { class: 'dot c-' + c }), COLOR_NAMES[c]))));
 }
 
-/* ---------- Filtres, tri, vues ---------- */
+/* ---------- Filters, sort, views ---------- */
 function filterPop(anchor, db, view) {
   const wrap = h('div', { class: 'pop-body' });
   const fields = [fieldOf(db, 'title'), ...db.props];
@@ -1093,13 +1093,13 @@ function filterPop(anchor, db, view) {
       return h('select', { onchange: e => set(e.target.value) }, Object.entries(RECUR).filter(([k]) => k).map(([k, l]) => h('option', { value: k, selected: k === f.value }, l)));
     if (p.type === 'relation') {
       const t = dbById(p.target);
-      return h('select', { onchange: e => set(e.target.value) }, h('option', { value: '' }, '—'), (t ? pagesOf(t) : []).map(x => h('option', { value: x.id, selected: x.id === f.value }, x.title || 'Sans titre')));
+      return h('select', { onchange: e => set(e.target.value) }, h('option', { value: '' }, '—'), (t ? pagesOf(t) : []).map(x => h('option', { value: x.id, selected: x.id === f.value }, x.title || 'Untitled')));
     }
-    return h('input', { type: p.type === 'number' ? 'number' : 'text', value: f.value ?? '', placeholder: 'Valeur', oninput: e => set(e.target.value) });
+    return h('input', { type: p.type === 'number' ? 'number' : 'text', value: f.value ?? '', placeholder: 'Value', oninput: e => set(e.target.value) });
   }
   function draw() {
     wrap.innerHTML = '';
-    if (!view.filters.length) wrap.append(h('div', { class: 'muted sm' }, 'Aucun filtre sur cette vue.'));
+    if (!view.filters.length) wrap.append(h('div', { class: 'muted sm' }, 'No filters on this view.'));
     view.filters.forEach((f, i) => {
       const p = fields.find(x => x.id === f.prop) || fields[0];
       wrap.append(h('div', { class: 'f-row' },
@@ -1107,22 +1107,22 @@ function filterPop(anchor, db, view) {
           fields.map(x => h('option', { value: x.id, selected: x.id === f.prop }, x.name))),
         h('select', { onchange: e => { f.op = e.target.value; changed(); } }, OPS[p.type].map(([k, l]) => h('option', { value: k, selected: k === f.op }, l))),
         NEEDS_VALUE.has(f.op) ? valueInput(p, f) : null,
-        h('button', { class: 'icon-btn sm', title: 'Retirer', onclick: () => { view.filters.splice(i, 1); changed(); } }, '✕')));
+        h('button', { class: 'icon-btn sm', title: 'Remove', onclick: () => { view.filters.splice(i, 1); changed(); } }, '✕')));
     });
-    wrap.append(h('button', { class: 'link-btn', onclick: () => { view.filters.push({ prop: 'title', op: 'contains', value: '' }); changed(); } }, '+ Ajouter un filtre'));
+    wrap.append(h('button', { class: 'link-btn', onclick: () => { view.filters.push({ prop: 'title', op: 'contains', value: '' }); changed(); } }, '+ Add a filter'));
   }
   draw();
   popover(anchor, wrap, { width: 470 });
 }
 function sortPop(anchor, db, view) {
-  const fields = [['', 'Ordre manuel'], ['title', 'Nom'], ...db.props.map(p => [p.id, p.name]), ['created', 'Date de création'], ['updated', 'Dernière modification']];
+  const fields = [['', 'Manual order'], ['title', 'Name'], ...db.props.map(p => [p.id, p.name]), ['created', 'Created'], ['updated', 'Last edited']];
   const set = (prop, dir) => { view.sort = prop ? { prop, dir } : null; save(); renderMain(); };
   popover(anchor, h('div', { class: 'pop-body' },
-    h('div', { class: 'pop-label' }, 'TRIER PAR'),
+    h('div', { class: 'pop-label' }, 'SORT BY'),
     h('div', { class: 'f-row' },
       h('select', { onchange: e => set(e.target.value, view.sort?.dir || 1) }, fields.map(([k, l]) => h('option', { value: k, selected: (view.sort?.prop || '') === k }, l))),
       h('select', { onchange: e => view.sort && set(view.sort.prop, Number(e.target.value)) },
-        h('option', { value: '1', selected: view.sort?.dir !== -1 }, 'Croissant'), h('option', { value: '-1', selected: view.sort?.dir === -1 }, 'Décroissant')))), { width: 330 });
+        h('option', { value: '1', selected: view.sort?.dir !== -1 }, 'Ascending'), h('option', { value: '-1', selected: view.sort?.dir === -1 }, 'Descending')))), { width: 330 });
 }
 function viewDefaults(db, type) {
   const extra = {};
@@ -1147,37 +1147,37 @@ function viewPop(anchor, db, view) {
     const groupable = db.props.filter(p => ['select', 'checkbox'].includes(p.type));
     const dates = db.props.filter(p => p.type === 'date');
     wrap.append(
-      h('div', { class: 'pop-label' }, 'NOM DE LA VUE'),
-      h('input', { class: 'in', value: view.name, oninput: e => { view.name = e.target.value || 'Vue'; save(); }, onchange: () => renderMain(), onkeydown: enterBlur }),
-      h('div', { class: 'pop-label' }, 'DISPOSITION'),
+      h('div', { class: 'pop-label' }, 'VIEW NAME'),
+      h('input', { class: 'in', value: view.name, oninput: e => { view.name = e.target.value || 'View'; save(); }, onchange: () => renderMain(), onkeydown: enterBlur }),
+      h('div', { class: 'pop-label' }, 'LAYOUT'),
       h('div', { class: 'seg' }, Object.entries(VIEW_TYPES).map(([k, t]) => h('button', {
         class: view.type === k ? 'on' : '', onclick: () => { view.type = k; Object.assign(view, { ...viewDefaults(db, k), groupBy: view.groupBy && propOf(db, view.groupBy) ? view.groupBy : viewDefaults(db, k).groupBy, dateProp: view.dateProp || viewDefaults(db, k).dateProp }); changed(); },
       }, h('span', null, t.icon), t.label))),
-      view.type === 'kanban' ? [h('div', { class: 'pop-label' }, 'GROUPER PAR'),
+      view.type === 'kanban' ? [h('div', { class: 'pop-label' }, 'GROUP BY'),
         h('select', { class: 'in', onchange: e => { view.groupBy = e.target.value; changed(); } },
           groupable.map(p => h('option', { value: p.id, selected: p.id === view.groupBy }, p.name)))] : null,
-      view.type === 'calendar' ? [h('div', { class: 'pop-label' }, 'DATE UTILISÉE'),
+      view.type === 'calendar' ? [h('div', { class: 'pop-label' }, 'DATE PROPERTY'),
         h('select', { class: 'in', onchange: e => { view.dateProp = e.target.value; changed(); } },
           dates.map(p => h('option', { value: p.id, selected: p.id === (view.dateProp || dueProp(db)?.id) }, p.name)))] : null,
-      h('div', { class: 'pop-label' }, 'PROPRIÉTÉS AFFICHÉES'),
+      h('div', { class: 'pop-label' }, 'VISIBLE PROPERTIES'),
       h('div', { class: 'vis-list' }, db.props.map(p => h('label', null,
         h('input', { type: 'checkbox', class: 'chk', checked: !view.hidden.includes(p.id), onchange: e => { view.hidden = e.target.checked ? view.hidden.filter(x => x !== p.id) : [...view.hidden, p.id]; changed(); } }),
         h('span', { class: 'ti muted' }, TYPES[p.type].icon), p.name))),
       h('div', { class: 'menu-sep' }),
-      h('button', { class: 'menu-item', onclick: () => { const v = JSON.parse(JSON.stringify(view)); v.id = uid(); v.name += ' (copie)'; db.views.push(v); db.activeView = v.id; save(); closePop(); renderMain(); } }, '⧉ Dupliquer la vue'),
-      db.views.length > 1 ? h('button', { class: 'menu-item danger', onclick: () => { db.views = db.views.filter(v => v !== view); db.activeView = db.views[0].id; save(); closePop(); renderMain(); } }, '🗑 Supprimer la vue') : null,
-      h('button', { class: 'menu-item danger', onclick: () => deleteDb(db) }, '🗑 Supprimer la base entière'),
+      h('button', { class: 'menu-item', onclick: () => { const v = JSON.parse(JSON.stringify(view)); v.id = uid(); v.name += ' (copy)'; db.views.push(v); db.activeView = v.id; save(); closePop(); renderMain(); } }, '⧉ Duplicate view'),
+      db.views.length > 1 ? h('button', { class: 'menu-item danger', onclick: () => { db.views = db.views.filter(v => v !== view); db.activeView = db.views[0].id; save(); closePop(); renderMain(); } }, '🗑 Delete view') : null,
+      h('button', { class: 'menu-item danger', onclick: () => deleteDb(db) }, '🗑 Delete the whole database'),
     );
   }
   draw();
   popover(anchor, wrap, { width: 320 });
 }
 
-/* ================= Modales ================= */
+/* ================= Modals ================= */
 function modal(title, content, { cls = '', onClose } = {}) {
   closeModal();
   const box = h('div', { class: 'modal ' + cls, role: 'dialog' },
-    title ? h('div', { class: 'modal-head' }, h('h2', null, title), h('button', { class: 'icon-btn', 'aria-label': 'Fermer', onclick: closeModal }, '✕')) : null,
+    title ? h('div', { class: 'modal-head' }, h('h2', null, title), h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: closeModal }, '✕')) : null,
     h('div', { class: 'modal-body' }, content));
   const ov = h('div', { class: 'overlay', onmousedown: e => { if (e.target === ov) closeModal(); } }, box);
   ov._onClose = onClose;
@@ -1195,7 +1195,7 @@ function openNewDb() {
   closePop();
   let kind = 'vide';
   const icon = h('button', { class: 'db-icon', style: { fontSize: '24px', width: '40px', height: '40px' }, onclick: e => emojiPicker(e.currentTarget, v => { icon.textContent = v || '📁'; icon.dataset.set = '1'; }) }, '📁');
-  const name = h('input', { class: 'in', placeholder: 'Nom de la base (facultatif)' });
+  const name = h('input', { class: 'in', placeholder: 'Database name (optional)' });
   const grid = h('div', { class: 'tpl-grid' });
   const draw = () => {
     grid.innerHTML = '';
@@ -1208,25 +1208,25 @@ function openNewDb() {
   const create = () => {
     const { db } = makeDb(kind, { projets: S.dbs.find(d => d.tpl === 'projets')?.id });
     if (name.value.trim()) db.name = name.value.trim();
-    else if (kind === 'vide') db.name = 'Nouvelle base';
+    else if (kind === 'vide') db.name = 'New database';
     db.icon = icon.textContent;
     S.dbs.push(db);
     save(); closeModal();
     location.hash = '#/db/' + db.id;
   };
   name.addEventListener('keydown', e => { if (e.key === 'Enter') create(); });
-  modal('Nouvelle base', [
+  modal('New database', [
     h('div', { class: 'form-row' }, icon, name),
-    h('div', { class: 'pop-label', style: { marginTop: '14px' } }, 'MODÈLE'),
+    h('div', { class: 'pop-label', style: { marginTop: '14px' } }, 'TEMPLATE'),
     grid,
-    h('div', { class: 'modal-foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Annuler'), h('button', { class: 'btn primary', onclick: create }, 'Créer la base')),
+    h('div', { class: 'modal-foot' }, h('button', { class: 'btn', onclick: closeModal }, 'Cancel'), h('button', { class: 'btn primary', onclick: create }, 'Create database')),
   ]);
   name.focus();
 }
 function deleteDb(db) {
   closePop();
   const n = pagesOf(db).length;
-  if (!confirm(`Supprimer « ${db.name} » et ses ${n} page(s) ? Cette action est définitive (pensez à sauvegarder).`)) return;
+  if (!confirm(`Delete “${db.name}” and its ${n} page(s)? This cannot be undone (consider backing up first).`)) return;
   S.dbs = S.dbs.filter(d => d !== db);
   S.pages = S.pages.filter(p => p.db !== db.id);
   for (const d of S.dbs) {
@@ -1265,7 +1265,7 @@ function changeType(db, p, t) {
     const v = pg.props[p.id];
     if (v == null) continue;
     let nv = null;
-    if (t === 'text' || t === 'url') nv = old === 'checkbox' ? (v ? 'Oui' : '') : names(v).filter(Boolean).join(', ');
+    if (t === 'text' || t === 'url') nv = old === 'checkbox' ? (v ? 'Yes' : '') : names(v).filter(Boolean).join(', ');
     else if (t === 'number') { const n = parseFloat(String(v).replace(',', '.')); nv = isNaN(n) ? null : n; }
     else if (t === 'select' || t === 'multi') {
       if (keepOpts) nv = t === 'multi' ? (old === 'multi' ? v : [v]) : (old === 'multi' ? v[0] : v);
@@ -1295,24 +1295,24 @@ function openSchema(db, addNew) {
   function extra(p) {
     if (p.type === 'select' || p.type === 'multi') return h('div', { class: 'sch-opts' },
       p.options.map((o, j) => h('div', { class: 'sch-opt' },
-        h('button', { class: 'dot c-' + o.color, title: 'Couleur : ' + COLOR_NAMES[o.color], onclick: e => colorPop(e.currentTarget, o, () => { save(); draw(); }) }),
+        h('button', { class: 'dot c-' + o.color, title: 'Colour: ' + COLOR_NAMES[o.color], onclick: e => colorPop(e.currentTarget, o, () => { save(); draw(); }) }),
         h('input', { class: 'in sm', value: o.name, oninput: e => { o.name = e.target.value; save(); } }),
-        p.type === 'select' ? h('label', { class: 'sch-done', title: 'Les éléments avec cette option sont considérés comme terminés' },
-          h('input', { type: 'checkbox', class: 'chk', checked: !!o.done, onchange: e => { if (e.target.checked) o.done = true; else delete o.done; save(); } }), 'terminé') : null,
-        h('button', { class: 'icon-btn sm', title: 'Monter', disabled: j === 0, onclick: () => { p.options.splice(j - 1, 0, p.options.splice(j, 1)[0]); save(); draw(); } }, '↑'),
-        h('button', { class: 'icon-btn sm danger', title: 'Supprimer l’option', onclick: () => { p.options.splice(j, 1); save(); draw(); } }, '✕'))),
-      h('button', { class: 'link-btn', onclick: () => { p.options.push(opt('Option ' + (p.options.length + 1), COLORS[p.options.length % COLORS.length])); save(); draw(); } }, '+ Ajouter une option'));
+        p.type === 'select' ? h('label', { class: 'sch-done', title: 'Items with this option count as done' },
+          h('input', { type: 'checkbox', class: 'chk', checked: !!o.done, onchange: e => { if (e.target.checked) o.done = true; else delete o.done; save(); } }), 'done') : null,
+        h('button', { class: 'icon-btn sm', title: 'Move up', disabled: j === 0, onclick: () => { p.options.splice(j - 1, 0, p.options.splice(j, 1)[0]); save(); draw(); } }, '↑'),
+        h('button', { class: 'icon-btn sm danger', title: 'Delete option', onclick: () => { p.options.splice(j, 1); save(); draw(); } }, '✕'))),
+      h('button', { class: 'link-btn', onclick: () => { p.options.push(opt('Option ' + (p.options.length + 1), COLORS[p.options.length % COLORS.length])); save(); draw(); } }, '+ Add an option'));
     if (p.type === 'checkbox') return h('label', { class: 'sch-flag' },
-      h('input', { type: 'checkbox', class: 'chk', checked: !!p.done, onchange: e => { p.done = e.target.checked; save(); } }), 'Cochée = terminé (masquage, rappels, récurrence)');
+      h('input', { type: 'checkbox', class: 'chk', checked: !!p.done, onchange: e => { p.done = e.target.checked; save(); } }), 'Checked = done (hiding, reminders, recurrence)');
     if (p.type === 'date') return h('label', { class: 'sch-flag' },
       h('input', { type: 'checkbox', class: 'chk', checked: !!p.due, onchange: e => { db.props.forEach(x => { if (x.type === 'date') delete x.due; }); if (e.target.checked) p.due = true; save(); draw(); } }),
-      "Date d'échéance (accueil, rappels, récurrence)");
+      'Due date (home, reminders, recurrence)');
     if (p.type === 'number') return h('div', { class: 'sch-sub' }, 'Format',
       h('select', { class: 'in sm', onchange: e => { p.format = e.target.value; save(); } }, Object.entries(NUM_FORMATS).map(([k, l]) => h('option', { value: k, selected: (p.format || 'number') === k }, l))));
-    if (p.type === 'relation') return h('div', { class: 'sch-sub' }, 'Liée à',
+    if (p.type === 'relation') return h('div', { class: 'sch-sub' }, 'Linked to',
       h('select', { class: 'in sm', onchange: e => { p.target = e.target.value; for (const pg of pagesOf(db)) delete pg.props[p.id]; save(); } },
         S.dbs.map(d => h('option', { value: d.id, selected: d.id === p.target }, d.icon + ' ' + d.name))));
-    if (p.type === 'recur') return h('div', { class: 'sch-sub' }, 'Quand l’élément est marqué terminé, son échéance avance automatiquement.');
+    if (p.type === 'recur') return h('div', { class: 'sch-sub' }, 'When the item is marked done, its due date moves forward automatically.');
     return null;
   }
   function draw() {
@@ -1320,37 +1320,37 @@ function openSchema(db, addNew) {
     db.props.forEach((p, i) => body.append(h('div', { class: 'sch-prop' },
       h('div', { class: 'sch-line' },
         h('span', { class: 'ti' }, TYPES[p.type].icon),
-        h('input', { class: 'in', value: p.name, 'aria-label': 'Nom de la propriété', oninput: e => { p.name = e.target.value || 'Sans nom'; save(); } }),
+        h('input', { class: 'in', value: p.name, 'aria-label': 'Property name', oninput: e => { p.name = e.target.value || 'Sans nom'; save(); } }),
         h('select', { class: 'in', 'aria-label': 'Type', onchange: e => { changeType(db, p, e.target.value); draw(); } },
           Object.entries(TYPES).map(([k, t]) => h('option', { value: k, selected: k === p.type }, t.label))),
-        h('button', { class: 'icon-btn sm', title: 'Monter', disabled: i === 0, onclick: () => { db.props.splice(i - 1, 0, db.props.splice(i, 1)[0]); save(); draw(); } }, '↑'),
-        h('button', { class: 'icon-btn sm', title: 'Descendre', disabled: i === db.props.length - 1, onclick: () => { db.props.splice(i + 1, 0, db.props.splice(i, 1)[0]); save(); draw(); } }, '↓'),
+        h('button', { class: 'icon-btn sm', title: 'Move up', disabled: i === 0, onclick: () => { db.props.splice(i - 1, 0, db.props.splice(i, 1)[0]); save(); draw(); } }, '↑'),
+        h('button', { class: 'icon-btn sm', title: 'Move down', disabled: i === db.props.length - 1, onclick: () => { db.props.splice(i + 1, 0, db.props.splice(i, 1)[0]); save(); draw(); } }, '↓'),
         h('button', {
-          class: 'icon-btn sm danger', title: 'Supprimer', onclick: () => {
-            if (!confirm(`Supprimer la propriété « ${p.name} » et toutes ses valeurs ?`)) return;
+          class: 'icon-btn sm danger', title: 'Delete', onclick: () => {
+            if (!confirm(`Delete the “${p.name}” property and all its values?`)) return;
             db.props.splice(i, 1);
             for (const pg of pagesOf(db)) delete pg.props[p.id];
             cleanupViews(db); save(); draw();
           },
         }, '✕')),
       extra(p))));
-    body.append(h('button', { class: 'btn', onclick: addProp }, '+ Ajouter une propriété'));
+    body.append(h('button', { class: 'btn', onclick: addProp }, '+ Add a property'));
   }
   function addProp() {
-    db.props.push(mkProp('Nouvelle propriété', 'text'));
+    db.props.push(mkProp('New property', 'text'));
     save(); draw();
     const ins = body.querySelectorAll('.sch-line .in:not(select)');
     ins[ins.length - 1]?.select();
   }
   draw();
-  modal(`Propriétés — ${db.name}`, body, { onClose: () => { save(); refresh(); } });
+  modal(`Properties — ${db.name}`, body, { onClose: () => { save(); refresh(); } });
   if (addNew) addProp();
 }
 
-/* ---------- Recherche rapide (Ctrl+K) ---------- */
+/* ---------- Quick find (Ctrl+K) ---------- */
 function openQuickFind() {
   closePop();
-  const input = h('input', { class: 'qf-in', placeholder: 'Rechercher une page ou une base…' });
+  const input = h('input', { class: 'qf-in', placeholder: 'Search for a page or database…' });
   const list = h('div', { class: 'qf-list' });
   let results = [], sel = 0;
   const openRes = r => { closeModal(); if (r.kind === 'db') location.hash = '#/db/' + r.d.id; else openPeek(r.p.id); };
@@ -1366,10 +1366,10 @@ function openQuickFind() {
       const db = r.kind === 'db' ? r.d : dbById(r.p.db);
       list.append(h('div', { class: 'menu-item' + (i === sel ? ' kb' : ''), onclick: () => openRes(r) },
         h('span', null, r.kind === 'db' ? db.icon : (r.p.icon || db?.icon || '📄')),
-        h('span', null, r.kind === 'db' ? db.name : (r.p.title || 'Sans titre')),
-        h('span', { class: 'muted' }, r.kind === 'db' ? 'Base' : db?.name)));
+        h('span', null, r.kind === 'db' ? db.name : (r.p.title || 'Untitled')),
+        h('span', { class: 'muted' }, r.kind === 'db' ? 'Database' : db?.name)));
     });
-    if (!results.length) list.append(h('div', { class: 'menu-empty' }, 'Aucun résultat'));
+    if (!results.length) list.append(h('div', { class: 'menu-empty' }, 'No results'));
     list.children[sel]?.scrollIntoView({ block: 'nearest' });
   }
   input.addEventListener('input', () => { sel = 0; draw(); });
@@ -1383,7 +1383,7 @@ function openQuickFind() {
   input.focus();
 }
 
-/* ================= Page (panneau latéral) ================= */
+/* ================= Page (side panel) ================= */
 function openPeek(id, opts = {}) { closePop(); ui.peek = id; renderPeek(opts); }
 function closePeek() {
   ui.peek = null;
@@ -1405,18 +1405,18 @@ function renderPeek(opts = {}) {
   root.innerHTML = '';
 
   const title = h('textarea', {
-    class: 'peek-title', rows: 1, placeholder: 'Sans titre', value: pg.title,
+    class: 'peek-title', rows: 1, placeholder: 'Untitled', value: pg.title,
     oninput: e => { pg.title = e.target.value.replace(/\n/g, ''); touch(pg); autosize(e.target); softMain(); },
     onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); content.focus(); } },
   });
   const content = h('div', {
     class: 'content', contenteditable: 'true', spellcheck: 'true',
-    'data-ph': 'Écrivez vos notes… Raccourcis : « # » titre, « - » liste, « [] » case à cocher, « > » citation',
+    'data-ph': 'Write your notes… Shortcuts: “# ” heading, “- ” list, “[] ” checkbox, “> ” quote',
     html: pg.content || '',
   });
   const syncContent = () => { pg.content = content.innerHTML; touch(pg); };
   content.addEventListener('input', e => {
-    // différé : Chrome ignore les execCommand imbriqués dans un événement input
+    // deferred: Chrome ignores execCommand nested inside an input event
     if (e.inputType === 'insertText' && e.data === ' ') setTimeout(() => { mdShortcut(content); syncContent(); });
     syncContent();
   });
@@ -1429,14 +1429,14 @@ function renderPeek(opts = {}) {
   });
   content.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
-    // une nouvelle case à cocher ne doit pas hériter de l'état « cochée »
+    // a new checklist item must not inherit the checked state
     setTimeout(() => {
       const li = closestEl(getSelection().anchorNode, 'ul.checklist > li', content);
       if (li && !li.textContent.trim()) li.removeAttribute('data-done');
     });
   });
   content.addEventListener('paste', e => {
-    // colle en texte brut pour garder des notes propres
+    // paste as plain text to keep notes clean
     const t = e.clipboardData?.getData('text/plain');
     if (t == null) return;
     e.preventDefault();
@@ -1456,34 +1456,34 @@ function renderPeek(opts = {}) {
   const panel = h('aside', { class: 'peek' + (ui.peekWide ? ' wide' : ''), role: 'dialog', 'aria-label': pg.title || 'Page' },
     h('div', { class: 'peek-top' },
       h('a', { class: 'crumb', href: '#/db/' + db.id, onclick: () => { ui.peek = null; $('#peek-root').innerHTML = ''; } }, db.icon, ' ', db.name),
-      h('button', { class: 'icon-btn', title: ui.peekWide ? 'Réduire' : 'Agrandir', onclick: () => { ui.peekWide = !ui.peekWide; renderPeek(); } }, ui.peekWide ? '⇥' : '⇤'),
-      h('button', { class: 'icon-btn', title: 'Dupliquer', onclick: () => duplicatePage(pg) }, '⧉'),
-      h('button', { class: 'icon-btn danger', title: 'Supprimer', onclick: () => deletePage(pg.id) }, '🗑'),
-      h('button', { class: 'icon-btn', title: 'Fermer (Échap)', onclick: closePeek }, '✕')),
+      h('button', { class: 'icon-btn', title: ui.peekWide ? 'Collapse' : 'Expand', onclick: () => { ui.peekWide = !ui.peekWide; renderPeek(); } }, ui.peekWide ? '⇥' : '⇤'),
+      h('button', { class: 'icon-btn', title: 'Duplicate', onclick: () => duplicatePage(pg) }, '⧉'),
+      h('button', { class: 'icon-btn danger', title: 'Delete', onclick: () => deletePage(pg.id) }, '🗑'),
+      h('button', { class: 'icon-btn', title: 'Close (Esc)', onclick: closePeek }, '✕')),
     h('div', { class: 'peek-in' },
       pg.icon
-        ? h('button', { class: 'peek-icon', title: "Changer l'icône", onclick: e => emojiPicker(e.currentTarget, v => { pg.icon = v; touch(pg); refresh(); }) }, pg.icon)
-        : h('button', { class: 'peek-icon add', onclick: e => emojiPicker(e.currentTarget, v => { pg.icon = v; touch(pg); refresh(); }) }, '☺ Ajouter une icône'),
+        ? h('button', { class: 'peek-icon', title: 'Change icon', onclick: e => emojiPicker(e.currentTarget, v => { pg.icon = v; touch(pg); refresh(); }) }, pg.icon)
+        : h('button', { class: 'peek-icon add', onclick: e => emojiPicker(e.currentTarget, v => { pg.icon = v; touch(pg); refresh(); }) }, '☺ Add icon'),
       title,
       h('div', { class: 'props' }, db.props.map(p => [
         h('div', { class: 'p-label', title: TYPES[p.type].label }, h('span', { class: 'ti' }, TYPES[p.type].icon), p.name),
         h('div', { class: 'p-val' }, editor(pg, p, 'peek')),
       ])),
-      h('button', { class: 'link-btn sm', onclick: () => openSchema(db, true) }, '+ Ajouter une propriété'),
+      h('button', { class: 'link-btn sm', onclick: () => openSchema(db, true) }, '+ Add a property'),
       h('div', { class: 'peek-meta' },
-        h('span', null, 'Créé le ' + new Date(pg.created).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })),
-        h('span', null, 'Modifié le ' + new Date(pg.updated).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }))),
+        h('span', null, 'Created ' + new Date(pg.created).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })),
+        h('span', null, 'Edited ' + new Date(pg.updated).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }))),
       h('hr', { class: 'peek-hr' }),
       h('div', { class: 'ed-tools' },
-        tb('B', 'Gras (Ctrl+B)', exec('bold')), tb('I', 'Italique (Ctrl+I)', exec('italic')), tb('U', 'Souligné (Ctrl+U)', exec('underline')), tb('S̶', 'Barré', exec('strikeThrough')),
+        tb('B', 'Bold (Ctrl+B)', exec('bold')), tb('I', 'Italic (Ctrl+I)', exec('italic')), tb('U', 'Underline (Ctrl+U)', exec('underline')), tb('S̶', 'Strikethrough', exec('strikeThrough')),
         sep(),
-        tb('H1', 'Grand titre', exec('formatBlock', '<h1>')), tb('H2', 'Titre', exec('formatBlock', '<h2>')), tb('H3', 'Sous-titre', exec('formatBlock', '<h3>')), tb('¶', 'Paragraphe', exec('formatBlock', '<p>')),
+        tb('H1', 'Heading 1', exec('formatBlock', '<h1>')), tb('H2', 'Heading 2', exec('formatBlock', '<h2>')), tb('H3', 'Heading 3', exec('formatBlock', '<h3>')), tb('¶', 'Paragraph', exec('formatBlock', '<p>')),
         sep(),
-        tb('•', 'Liste à puces', exec('insertUnorderedList')), tb('1.', 'Liste numérotée', exec('insertOrderedList')), tb('☑', 'Liste de cases à cocher', () => toggleChecklist(content)),
-        tb('❝', 'Citation', exec('formatBlock', '<blockquote>')), tb('―', 'Séparateur', exec('insertHorizontalRule')),
+        tb('•', 'Bulleted list', exec('insertUnorderedList')), tb('1.', 'Numbered list', exec('insertOrderedList')), tb('☑', 'Checklist', () => toggleChecklist(content)),
+        tb('❝', 'Quote', exec('formatBlock', '<blockquote>')), tb('―', 'Divider', exec('insertHorizontalRule')),
         sep(),
-        tb('🔗', 'Lien', () => { const u = prompt('Adresse du lien :', 'https://'); if (u) document.execCommand('createLink', false, normUrl(u)); }),
-        tb('⌫', 'Effacer la mise en forme', exec('removeFormat'))),
+        tb('🔗', 'Link', () => { const u = prompt('Link URL:', 'https://'); if (u) document.execCommand('createLink', false, normUrl(u)); }),
+        tb('⌫', 'Clear formatting', exec('removeFormat'))),
       content));
   root.append(h('div', { class: 'peek-backdrop', onclick: closePeek }), panel);
   content.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
@@ -1507,7 +1507,7 @@ function toggleChecklist(content) {
   if (ul) ul.classList.add('checklist');
   unwrapList(content);
 }
-// Raccourcis Markdown en début de ligne : #, ##, ###, -, *, 1., [], >  (déclenchés par l'espace)
+// Markdown shortcuts at line start: #, ##, ###, -, *, 1., [], >  (triggered by space)
 const MD = { '#': ['formatBlock', '<h1>'], '##': ['formatBlock', '<h2>'], '###': ['formatBlock', '<h3>'], '-': ['ul'], '*': ['ul'], '1.': ['ol'], '[]': ['todo'], '>': ['formatBlock', '<blockquote>'] };
 function mdShortcut(content) {
   const sel = getSelection();
@@ -1531,7 +1531,7 @@ function mdShortcut(content) {
   else toggleChecklist(content);
   unwrapList(content);
 }
-// Chrome place parfois la liste créée dans un <p> : on la remonte d'un niveau.
+// Chrome sometimes puts the new list inside a <p>: lift it one level.
 function unwrapList(content) {
   const li = closestEl(getSelection().anchorNode, 'li', content);
   const list = li?.parentElement, par = list?.parentElement;
@@ -1546,12 +1546,12 @@ function unwrapList(content) {
 
 function duplicatePage(pg) {
   const c = JSON.parse(JSON.stringify(pg));
-  Object.assign(c, { id: uid(), title: pg.title + ' (copie)', created: Date.now(), updated: Date.now(), order: pg.order + 0.5 });
+  Object.assign(c, { id: uid(), title: pg.title + ' (copy)', created: Date.now(), updated: Date.now(), order: pg.order + 0.5 });
   S.pages.push(c);
   save();
   openPeek(c.id);
   renderMain();
-  toast('Page dupliquée');
+  toast('Page duplicated');
 }
 function deletePage(id) {
   const i = S.pages.findIndex(p => p.id === id);
@@ -1559,7 +1559,7 @@ function deletePage(id) {
   const [pg] = S.pages.splice(i, 1);
   save();
   closePeek();
-  toast(`« ${pg.title || 'Sans titre'} » supprimé`, { label: 'Annuler', fn: () => { S.pages.splice(i, 0, pg); save(); refresh(); } });
+  toast(`“${pg.title || 'Untitled'}” deleted`, { label: 'Undo', fn: () => { S.pages.splice(i, 0, pg); save(); refresh(); } });
 }
 
 /* ================= Toasts ================= */
@@ -1572,34 +1572,34 @@ function toast(msg, action) {
 }
 const go = hash => { location.hash = hash; };
 
-/* ================= Rappels, export, import ================= */
+/* ================= Reminders, export, import ================= */
 async function enableNotifs() {
-  if (!('Notification' in window)) return toast('Ce navigateur ne gère pas les notifications. Utilisez l’export .ics vers votre agenda.');
-  if (Notification.permission === 'granted') { checkNotifs(true); return toast('Rappels déjà activés ✓'); }
+  if (!('Notification' in window)) return toast('This browser doesn’t support notifications. Use the .ics export to your calendar instead.');
+  if (Notification.permission === 'granted') { checkNotifs(true); return toast('Reminders already on ✓'); }
   const r = await Notification.requestPermission();
-  if (r === 'granted') { toast('Rappels activés — ils s’affichent quand l’app est ouverte.'); checkNotifs(true); }
-  else toast('Notifications refusées par le navigateur.');
+  if (r === 'granted') { toast('Reminders on — they show while the app is open.'); checkNotifs(true); }
+  else toast('Notifications blocked by the browser.');
   renderSidebar(); renderMain();
 }
 async function notify(title, opts) {
   try {
     const reg = await navigator.serviceWorker?.getRegistration();
     if (reg) return await reg.showNotification(title, opts);
-  } catch (e) { /* repli ci-dessous */ }
-  try { new Notification(title, opts); } catch (e) { /* ignoré */ }
+  } catch (e) { /* fallback below */ }
+  try { new Notification(title, opts); } catch (e) { /* ignored */ }
 }
 function checkNotifs(force) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const T = todayISO();
   let sent = {};
-  try { sent = JSON.parse(localStorage.getItem(NOTIF_KEY)) || {}; } catch (e) { /* vide */ }
+  try { sent = JSON.parse(localStorage.getItem(NOTIF_KEY)) || {}; } catch (e) { /* empty */ }
   for (const k in sent) if (!k.endsWith('@' + T)) delete sent[k];
   for (const i of dueItems().filter(i => i.n <= 1)) {
     const k = i.pg.id + '@' + T;
     if (sent[k] && !force) continue;
     sent[k] = 1;
-    const when = i.n < 0 ? `En retard (${fmtDate(i.d)})` : i.n === 0 ? "Aujourd'hui" : 'Demain';
-    notify(`${i.pg.title || 'Sans titre'}`, { body: `${when} · ${i.db.icon} ${i.db.name}${i.amt ? ' · ' + EUR.format(i.amt) : ''}`, tag: i.pg.id, icon: 'icon.svg' });
+    const when = i.n < 0 ? `Overdue (${fmtDate(i.d)})` : i.n === 0 ? 'Today' : 'Tomorrow';
+    notify(`${i.pg.title || 'Untitled'}`, { body: `${when} · ${i.db.icon} ${i.db.name}${i.amt ? ' · ' + EUR.format(i.amt) : ''}`, tag: i.pg.id, icon: 'icon.svg' });
   }
   localStorage.setItem(NOTIF_KEY, JSON.stringify(sent));
 }
@@ -1611,21 +1611,21 @@ function download(name, text, type) {
 }
 function exportJSON() {
   saveNow();
-  download(`mon-espace-${todayISO()}.json`, JSON.stringify(S, null, 2), 'application/json');
-  toast('Sauvegarde téléchargée');
+  download(`braindead-${todayISO()}.json`, JSON.stringify(S, null, 2), 'application/json');
+  toast('Backup downloaded');
 }
 function exportICS() {
   const esc = s => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
   const ymd = s => s.replace(/-/g, '');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
   const RR = { weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY', quarterly: 'FREQ=MONTHLY;INTERVAL=3', yearly: 'FREQ=YEARLY' };
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mon espace//FR', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:' + esc(S.name)];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Braindead//EN', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:' + esc(S.name)];
   const items = dueItems();
   for (const i of items) {
     const rp = i.db.props.find(p => p.type === 'recur');
     const r = rp && i.pg.props[rp.id];
-    const title = (i.pg.title || 'Sans titre') + (i.amt ? ` — ${EUR.format(i.amt)}` : '');
-    lines.push('BEGIN:VEVENT', `UID:${i.pg.id}@mon-espace`, `DTSTAMP:${stamp}`,
+    const title = (i.pg.title || 'Untitled') + (i.amt ? ` — ${EUR.format(i.amt)}` : '');
+    lines.push('BEGIN:VEVENT', `UID:${i.pg.id}@braindead`, `DTSTAMP:${stamp}`,
       `DTSTART;VALUE=DATE:${ymd(i.d)}`, `DTEND;VALUE=DATE:${ymd(addDays(i.d, 1))}`,
       'SUMMARY:' + esc(title), 'DESCRIPTION:' + esc(`${i.db.name}`), 'CATEGORIES:' + esc(i.db.name));
     if (r && RR[r]) lines.push('RRULE:' + RR[r]);
@@ -1633,8 +1633,8 @@ function exportICS() {
       'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc(title), 'TRIGGER:PT9H', 'END:VALARM', 'END:VEVENT');
   }
   lines.push('END:VCALENDAR');
-  download(`rappels-${todayISO()}.ics`, lines.join('\r\n'), 'text/calendar');
-  toast(`${items.length} échéance(s) exportée(s) — ouvrez le fichier pour les ajouter à votre agenda (rappel la veille et le jour même).`);
+  download(`reminders-${todayISO()}.ics`, lines.join('\r\n'), 'text/calendar');
+  toast(`${items.length} due item(s) exported — open the file to add them to your calendar (alerts the day before and on the day).`);
 }
 $('#import-file').addEventListener('change', async e => {
   const f = e.target.files[0];
@@ -1643,17 +1643,17 @@ $('#import-file').addEventListener('change', async e => {
   try {
     const d = JSON.parse(await f.text());
     if (!Array.isArray(d.dbs) || !Array.isArray(d.pages)) throw new Error('format');
-    if (!confirm(`Remplacer toutes les données actuelles par cette sauvegarde (${d.dbs.length} bases, ${d.pages.length} pages) ?`)) return;
+    if (!confirm(`Replace all current data with this backup (${d.dbs.length} databases, ${d.pages.length} pages)?`)) return;
     S = migrate(d);
     saveNow();
     ui.peek = null; $('#peek-root').innerHTML = '';
     location.hash = '#/home';
     render();
-    toast('Sauvegarde restaurée ✓');
-  } catch (err) { toast('Fichier invalide : ce n’est pas une sauvegarde Mon espace.'); }
+    toast('Backup restored ✓');
+  } catch (err) { toast('Invalid file: this is not a Braindead backup.'); }
 });
 
-/* ================= Clavier & démarrage ================= */
+/* ================= Keyboard & startup ================= */
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openQuickFind(); return; }
   if (e.key === 'Escape') {
@@ -1663,10 +1663,10 @@ document.addEventListener('keydown', e => {
     else document.body.classList.remove('sb-open');
   }
 });
-// Synchronise les onglets ouverts en même temps.
+// Keep simultaneously open tabs in sync.
 window.addEventListener('storage', e => {
   if (e.key !== KEY || !e.newValue) return;
-  try { S = migrate(JSON.parse(e.newValue)); parseHash(); render(); } catch (err) { /* ignoré */ }
+  try { S = migrate(JSON.parse(e.newValue)); parseHash(); render(); } catch (err) { /* ignored */ }
 });
 
 document.execCommand('defaultParagraphSeparator', false, 'p');

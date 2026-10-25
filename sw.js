@@ -1,5 +1,5 @@
-// Service worker « réseau d'abord » : l'app marche hors ligne mais se met à jour dès qu'elle est en ligne.
-const CACHE = 'mon-espace-v1';
+// Network-first service worker: works offline, but updates as soon as it's online.
+const CACHE = 'braindead-v2';
 const FILES = ['./', './index.html', './styles.css', './app.js', './icon.svg', './manifest.webmanifest'];
 
 self.addEventListener('install', e => {

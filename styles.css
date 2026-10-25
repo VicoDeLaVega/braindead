@@ -1,4 +1,4 @@
-/* ============ Thèmes ============ */
+/* ============ Themes ============ */
 :root {
   --bg: #ffffff; --side: #f7f7f5; --surface: #ffffff; --surface2: #f6f6f4; --col: #f7f7f5;
   --hover: rgba(55, 53, 47, .06); --border: #ebebe9; --border2: #dcdcd8;
@@ -210,7 +210,7 @@ select.in { padding-right: 4px; }
 }
 .empty .btn { margin-top: 12px; }
 
-/* ============ Chips & valeurs ============ */
+/* ============ Chips & values ============ */
 .chip {
   display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
   padding: 0 8px; height: 21px; border-radius: 999px; font-size: 12.5px; font-weight: 500; line-height: 21px;
@@ -247,7 +247,7 @@ select.in { padding-right: 4px; }
 
 .chk { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; margin: 0; flex: none; }
 
-/* ============ Tableau ============ */
+/* ============ Table ============ */
 .table-wrap { overflow-x: auto; border-top: 1px solid var(--border); }
 .tbl { border-collapse: collapse; min-width: 100%; }
 .tbl th {
@@ -317,7 +317,7 @@ select.in { padding-right: 4px; }
 .col-done .card { opacity: .8; }
 .pick-group { max-width: 420px; }
 
-/* ============ Liste ============ */
+/* ============ List ============ */
 .list { border-top: 1px solid var(--border); }
 .list-add { border-bottom: 1px solid var(--border); }
 .list-row {
@@ -330,7 +330,7 @@ select.in { padding-right: 4px; }
 .lr-title { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lr-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 
-/* ============ Calendrier ============ */
+/* ============ Calendar ============ */
 .cal-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .cal-title { font-weight: 600; font-size: 16px; min-width: 150px; text-align: center; text-transform: capitalize; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
@@ -351,7 +351,7 @@ select.in { padding-right: 4px; }
 .cal-item.done { text-decoration: line-through; color: var(--muted); box-shadow: none; }
 .cal-item.late { border-left: 3px solid var(--danger); }
 
-/* ============ Accueil ============ */
+/* ============ Home ============ */
 .home h1 { font: 700 32px/1.2 var(--title-font); margin: 0; letter-spacing: -.01em; }
 .home .sub { color: var(--muted); margin: 4px 0 26px; text-transform: capitalize; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
@@ -441,7 +441,7 @@ select.in { padding-right: 4px; }
 .colors button { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 6px; font-size: 12.5px; }
 .colors button:hover { background: var(--hover); }
 
-/* ============ Modales ============ */
+/* ============ Modals ============ */
 .overlay {
   position: fixed; inset: 0; z-index: 50; background: var(--backdrop); display: grid; place-items: start center;
   padding: 8vh 16px 16px; overflow: auto; animation: fade .15s;
