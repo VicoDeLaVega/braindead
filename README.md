@@ -81,7 +81,7 @@ Ask for a quote for:
 
 You can edit the files by hand: change a property, tick a checkbox, add a new property line or even create a new file — Braindead picks it up.
 
-- **Back up (.json)** downloads a snapshot at any time; **Restore a backup** loads one (or moves your data to a phone).
+- **Export (.zip)** downloads your whole vault as a zip — works in every browser, phones included. Unzip it and you get the same readable folder. **Import (.zip)** loads one back (any vault folder zipped by hand works too, as do older `.json` backups) — handy to move your data to a phone or another browser.
 
 ## Run locally
 

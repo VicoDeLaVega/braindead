@@ -467,8 +467,8 @@ function renderSidebar() {
       syncButton(),
       h('button', { class: 'sb-item', onclick: enableNotifs }, h('span', { class: 'sb-ico' }, '🔔'), notifOn ? 'Reminders on' : 'Enable reminders'),
       h('button', { class: 'sb-item', onclick: exportICS }, h('span', { class: 'sb-ico' }, '📅'), 'Export to calendar (.ics)'),
-      h('button', { class: 'sb-item', onclick: exportJSON }, h('span', { class: 'sb-ico' }, '⬇'), 'Back up (.json)'),
-      h('button', { class: 'sb-item', onclick: () => $('#import-file').click() }, h('span', { class: 'sb-ico' }, '⬆'), 'Restore a backup')),
+      h('button', { class: 'sb-item', onclick: exportZip }, h('span', { class: 'sb-ico' }, '⬇'), 'Export (.zip)'),
+      h('button', { class: 'sb-item', onclick: () => $('#import-file').click() }, h('span', { class: 'sb-ico' }, '⬆'), 'Import (.zip)')),
   ]);
 }
 
@@ -1624,10 +1624,121 @@ function download(name, text, type) {
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
-function exportJSON() {
+/* --- Minimal ZIP (no dependency): deflate via CompressionStream when available --- */
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+const streamBytes = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+async function zip(files) { // files: [[path, text]]
+  const enc = new TextEncoder(), parts = [], central = [];
+  const d = new Date();
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  let offset = 0;
+  for (const [path, text] of files) {
+    const name = enc.encode(path), data = enc.encode(text);
+    let method = 0, body = data;
+    if ('CompressionStream' in window) {
+      try { body = await streamBytes(data, new CompressionStream('deflate-raw')); method = 8; } catch (e) { body = data; }
+    }
+    const crc = crc32(data);
+    const head = new DataView(new ArrayBuffer(30));
+    [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [8, method, 2], [10, time, 2], [12, date, 2], [14, crc, 4],
+      [18, body.length, 4], [22, data.length, 4], [26, name.length, 2], [28, 0, 2]].forEach(([o, v, n]) => n === 4 ? head.setUint32(o, v, true) : head.setUint16(o, v, true));
+    const cd = new DataView(new ArrayBuffer(46));
+    [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x0800, 2], [10, method, 2], [12, time, 2], [14, date, 2], [16, crc, 4],
+      [20, body.length, 4], [24, data.length, 4], [28, name.length, 2], [30, 0, 2], [32, 0, 2], [34, 0, 2], [36, 0, 2], [38, 0, 4], [42, offset, 4]]
+      .forEach(([o, v, n]) => n === 4 ? cd.setUint32(o, v, true) : cd.setUint16(o, v, true));
+    parts.push(head, name, body);
+    central.push(cd, name);
+    offset += 30 + name.length + body.length;
+  }
+  const cdSize = central.reduce((s, p) => s + p.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  [[0, 0x06054b50, 4], [8, files.length, 2], [10, files.length, 2], [12, cdSize, 4], [16, offset, 4]].forEach(([o, v, n]) => n === 4 ? end.setUint32(o, v, true) : end.setUint16(o, v, true));
+  return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}
+async function unzip(buf) { // -> Map(path -> Uint8Array), files only
+  const v = new DataView(buf), out = new Map();
+  let e = buf.byteLength - 22;
+  while (e >= 0 && v.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('not a zip file');
+  const count = v.getUint16(e + 10, true);
+  let p = v.getUint32(e + 16, true);
+  const dec = new TextDecoder();
+  for (let i = 0; i < count; i++) {
+    if (v.getUint32(p, true) !== 0x02014b50) throw new Error('damaged zip file');
+    const method = v.getUint16(p + 10, true), csize = v.getUint32(p + 20, true);
+    const nlen = v.getUint16(p + 28, true), xlen = v.getUint16(p + 30, true), clen = v.getUint16(p + 32, true);
+    const local = v.getUint32(p + 42, true);
+    const name = dec.decode(new Uint8Array(buf, p + 46, nlen)).replace(/\\/g, '/');
+    p += 46 + nlen + xlen + clen;
+    if (name.endsWith('/') || name.includes('__MACOSX/')) continue;
+    const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+    const raw = new Uint8Array(buf, start, csize);
+    if (method === 0) out.set(name, raw);
+    else if (method === 8) out.set(name, await streamBytes(raw, new DecompressionStream('deflate-raw')));
+  }
+  return out;
+}
+
+// Export = the vault folder, zipped: unzip it and you get a ready-to-use vault.
+async function exportZip() {
   saveNow();
-  download(`braindead-${todayISO()}.json`, JSON.stringify(S, null, 2), 'application/json');
-  toast('Backup downloaded');
+  const { folders, files } = vaultLayout();
+  const root = safeName(S.name) + '/';
+  const format = S.vaultFormat || 'mdhtml';
+  const entries = [[root + META_FILE, metaText(folders)]];
+  for (const pg of S.pages) {
+    const db = dbById(pg.db);
+    if (db && files[pg.id]) entries.push([root + files[pg.id], pageToFile(pg, db, format)]);
+  }
+  download(`braindead-${todayISO()}.zip`, await zip(entries), 'application/zip');
+  toast(`Exported ${S.pages.length} pages — unzip to get a readable vault folder`);
+}
+// Builds a fresh state from vault files (zip import): _braindead.json + one file per page.
+function stateFromVault(files) {
+  const dec = new TextDecoder();
+  const metaPath = [...files.keys()].find(p => p.split('/').pop() === META_FILE);
+  if (!metaPath) throw new Error('no ' + META_FILE + ' in this zip');
+  const root = metaPath.slice(0, -META_FILE.length);
+  const m = JSON.parse(dec.decode(files.get(metaPath)));
+  if (!m || !Array.isArray(m.dbs)) throw new Error('unreadable ' + META_FILE);
+  const st = { version: 1, name: m.name || 'Braindead', theme: S.theme, vaultFormat: m.vaultFormat || 'mdhtml', appData: m.appData || {},
+    dbs: m.dbs.map(({ folder, ...db }) => db), pages: [] };
+  const prev = S;
+  S = st; // fileToPage / optionId work on the global state
+  try {
+    const pending = [];
+    for (const dbm of m.dbs) {
+      const db = st.dbs.find(d => d.id === dbm.id), prefix = root + (dbm.folder || safeName(dbm.name)) + '/';
+      for (const [path, bytes] of files) {
+        if (!path.startsWith(prefix) || path.slice(prefix.length).includes('/') || !/\.md(\.html)?$/i.test(path)) continue;
+        const parsed = fileToPage(dec.decode(bytes), db);
+        const pg = newPage(db);
+        if (parsed.id && !st.pages.some(x => x.id === parsed.id)) pg.id = parsed.id;
+        Object.assign(pg, { title: parsed.title, icon: parsed.icon, props: parsed.props, content: parsed.content });
+        if (parsed.created) pg.created = parsed.created;
+        if (parsed.updated) pg.updated = parsed.updated;
+        if (parsed.order != null) pg.order = parsed.order;
+        st.pages.push(pg);
+        for (const [p, titles] of parsed.pending) pending.push([pg, p, titles]);
+      }
+    }
+    for (const [pg, p, titles] of pending) {
+      const target = st.dbs.find(d => d.id === p.target);
+      const ids = target ? titles.map(t => st.pages.find(x => x.db === target.id && norm(x.title) === norm(t))?.id).filter(Boolean) : [];
+      if (ids.length) pg.props[p.id] = ids;
+    }
+  } finally { S = prev; }
+  return migrate(st);
 }
 function exportICS() {
   const esc = s => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
@@ -1655,17 +1766,24 @@ $('#import-file').addEventListener('change', async e => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
+  let d;
   try {
-    const d = JSON.parse(await f.text());
-    if (!Array.isArray(d.dbs) || !Array.isArray(d.pages)) throw new Error('format');
-    if (!confirm(`Replace all current data with this backup (${d.dbs.length} databases, ${d.pages.length} pages)?`)) return;
-    S = migrate(d);
-    saveNow();
-    ui.peek = null; $('#peek-root').innerHTML = '';
-    location.hash = '#/home';
-    render();
-    toast('Backup restored ✓');
-  } catch (err) { toast('Invalid file: this is not a Braindead backup.'); }
+    if (/\.zip$/i.test(f.name)) d = stateFromVault(await unzip(await f.arrayBuffer()));
+    else {
+      d = JSON.parse(await f.text()); // older .json backups
+      if (!Array.isArray(d.dbs) || !Array.isArray(d.pages)) throw new Error('not a Braindead backup');
+      d = migrate(d);
+    }
+  } catch (err) { return toast('Could not import this file: ' + err.message); }
+  const note = vault.state === 'ok' ? `\n\nYour vault folder “${vault.dir.name}” will be updated to match.` : '';
+  if (!confirm(`Replace all current data with this backup (${d.dbs.length} databases, ${d.pages.length} pages)?${note}`)) return;
+  d.savedAt = Date.now();
+  S = d;
+  saveNow();
+  ui.peek = null; $('#peek-root').innerHTML = '';
+  location.hash = '#/home';
+  render();
+  toast('Backup imported ✓');
 });
 
 /* ================= Apps (HTML pages in apps/, listed in apps/apps.json) ================= */
@@ -2187,9 +2305,9 @@ function vaultLayout() {
   }
   return { folders, files };
 }
-const metaText = () => JSON.stringify({
+const metaText = (folders = vault.folders) => JSON.stringify({
   app: 'braindead', version: 1, name: S.name, vaultFormat: S.vaultFormat || 'mdhtml',
-  dbs: S.dbs.map(db => ({ ...db, folder: vault.folders[db.id] })), appData: S.appData || {},
+  dbs: S.dbs.map(db => ({ ...db, folder: folders[db.id] })), appData: S.appData || {},
 }, null, 2);
 
 async function dirAt(parts, create) {
@@ -2420,7 +2538,7 @@ function openVaultModal() {
     h('p', { class: 'sync-p' }, 'Braindead can keep every page as a readable file in a folder on your computer — like an Obsidian vault. One sub-folder per database, one file per page, and edits in the files come back into Braindead.'),
     h('p', { class: 'sync-p' }, 'Choose a folder inside ', h('b', null, 'Google Drive, Dropbox or OneDrive'), ' to back it up online and share it between your computers. On the other computer, choose the same folder.'),
     !canVault
-      ? h('div', { class: 'tip' }, 'This browser can’t open folders. It works in Chrome and Edge on a computer — elsewhere, use “Back up (.json)”.')
+      ? h('div', { class: 'tip' }, 'This browser can’t open folders. It works in Chrome and Edge on a computer — elsewhere, use “Export (.zip)”.')
       : [
         vault.dir ? h('div', { class: 'tip' }, vault.state === 'ok' ? '✓ Connected to ' : '⚠ Not syncing: ', h('b', null, vault.dir.name),
           vault.state === 'ok' && vault.lastSync ? h('span', { class: 'muted' }, ' · synced ' + new Date(vault.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })) : null,
