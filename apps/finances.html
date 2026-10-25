@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Finances</title>
+  <style>
+    /* Defaults — Braindead overrides these with the current theme. */
+    :root {
+      --bg: #ffffff; --surface: #ffffff; --surface2: #f6f6f4; --col: #f7f7f5; --border: #ebebe9; --border2: #dcdcd8;
+      --text: #37352f; --muted: #787774; --faint: #a5a29c; --accent: #2f80ed; --accent-fg: #fff; --accent-soft: rgba(47, 128, 237, .12);
+      --danger: #d44c47; --ok: #2f8a5f; --radius: 10px; --shadow: 0 1px 2px rgba(15, 15, 15, .05), 0 2px 8px rgba(15, 15, 15, .05);
+      --font: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; --title-font: var(--font);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font); }
+    button, input, select { font: inherit; color: inherit; }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 28px 80px; }
+    .month { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+    .month h1 { font: 700 26px/1.2 var(--title-font); margin: 0; min-width: 210px; text-align: center; }
+    .nav { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border2); background: var(--surface); cursor: pointer; }
+    .nav:hover { background: var(--surface2); }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+    .stat .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .stat .l { color: var(--muted); font-size: 12.5px; }
+    .pos { color: var(--ok); } .neg { color: var(--danger); }
+    form { display: flex; flex-wrap: wrap; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; margin-bottom: 22px; box-shadow: var(--shadow); }
+    form input, form select { height: 34px; border: 1px solid var(--border2); border-radius: 7px; background: var(--surface); padding: 0 10px; outline: none; min-width: 0; }
+    form input:focus, form select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    #f-label { flex: 2 1 180px; } #f-amount { flex: 0 1 110px; } #f-cat { flex: 1 1 140px; }
+    .btn { height: 34px; padding: 0 14px; border-radius: 8px; border: 0; background: var(--accent); color: var(--accent-fg); font-weight: 600; cursor: pointer; }
+    .grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; align-items: start; }
+    section { background: var(--col); border-radius: 12px; padding: 14px; }
+    h2 { font-size: 14.5px; margin: 0 0 10px; display: flex; justify-content: space-between; }
+    h2 span { color: var(--muted); font-weight: 500; }
+    .row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+    .row .t { flex: 1; min-width: 0; }
+    .row .t b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .t small { color: var(--muted); }
+    .amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+    .del { border: 0; background: none; color: var(--faint); cursor: pointer; width: 24px; height: 24px; border-radius: 6px; }
+    .del:hover { color: var(--danger); background: var(--surface2); }
+    .bar { margin-bottom: 10px; }
+    .bar .top { display: flex; justify-content: space-between; font-size: 13px; }
+    .bar .track { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin-top: 3px; }
+    .bar .fill { height: 100%; border-radius: 4px; background: var(--accent); }
+    .empty { color: var(--faint); font-size: 13px; padding: 4px 2px; }
+    .side { display: flex; flex-direction: column; gap: 18px; }
+    @media (max-width: 760px) {
+      .wrap { padding: 16px 16px 80px; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .grid { grid-template-columns: 1fr; }
+      .month h1 { min-width: 0; flex: 1; font-size: 21px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="month">
+      <button class="nav" id="prev" aria-label="Previous month">‹</button>
+      <h1 id="label"></h1>
+      <button class="nav" id="next" aria-label="Next month">›</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v pos" id="s-in">–</div><div class="l">Income</div></div>
+      <div class="stat"><div class="v neg" id="s-out">–</div><div class="l">Spending</div></div>
+      <div class="stat"><div class="v" id="s-bal">–</div><div class="l">Balance</div></div>
+      <div class="stat"><div class="v" id="s-bills">–</div><div class="l">Bills still due this month</div></div>
+    </div>
+    <form id="add">
+      <select id="f-type" aria-label="Type"><option>Expense</option><option>Income</option></select>
+      <input id="f-label" placeholder="What? e.g. Groceries at the market" required>
+      <input id="f-amount" type="number" step="0.01" min="0" placeholder="Amount €" required>
+      <input id="f-cat" list="cats" placeholder="Category">
+      <datalist id="cats"></datalist>
+      <input id="f-date" type="date" required>
+      <button class="btn">Add</button>
+    </form>
+    <div class="grid">
+      <section><h2>Transactions <span id="count"></span></h2><div id="list"></div></section>
+      <div class="side">
+        <section><h2>Spending by category</h2><div id="cats-out"></div></section>
+        <section><h2>Bills this month <span id="bills-sum"></span></h2><div id="bills"></div></section>
+      </div>
+    </div>
+  </div>
+
+  <script src="braindead-sdk.js"></script>
+  <script>
+    const bd = window.Braindead;
+    const DB = 'Transactions';
+    const EUR = new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' });
+    const pad = n => String(n).padStart(2, '0');
+    const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const parseD = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+    const $ = id => document.getElementById(id);
+    const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+    let month = iso(new Date()).slice(0, 7);
+    let tx = [], bills = [], categories = [];
+
+    async function init() {
+      await bd.ensureDatabase({
+        name: DB, icon: '💸',
+        properties: [
+          { name: 'Amount', type: 'number', format: 'euro' },
+          { name: 'Date', type: 'date' },
+          { name: 'Type', type: 'select', options: [{ name: 'Expense', color: 'red' }, { name: 'Income', color: 'green' }] },
+          { name: 'Category', type: 'select', options: ['Groceries', 'Housing', 'Transport', 'Eating out', 'Leisure', 'Health', 'Shopping', 'Salary', 'Other'] },
+        ],
+      });
+      $('f-date').value = iso(new Date());
+      await load();
+      let t;
+      bd.onChange(() => { clearTimeout(t); t = setTimeout(load, 150); });
+    }
+
+    async function load() {
+      const [pages, dbs] = await Promise.all([bd.getPages(DB), bd.getDatabases()]);
+      tx = pages.map(p => ({ id: p.id, label: p.title, amount: Number(p.props.Amount) || 0, date: p.props.Date || '', type: p.props.Type || 'Expense', category: p.props.Category || 'Other' }));
+      categories = dbs.find(d => d.name === DB)?.properties.find(p => p.name === 'Category')?.options || [];
+      // Bills come from the "Bills & reminders" template database, if there is one.
+      bills = [];
+      const billDb = dbs.find(d => d.template === 'paiements');
+      if (billDb) {
+        const amountProp = billDb.properties.find(p => p.type === 'number' && p.format === 'euro')?.name;
+        const dueProp = (billDb.properties.find(p => p.type === 'date' && p.due) || billDb.properties.find(p => p.type === 'date'))?.name;
+        bills = (await bd.getPages(billDb.id))
+          .filter(p => !p.done && dueProp && p.props[dueProp])
+          .map(p => ({ title: p.title, icon: p.icon, amount: Number(p.props[amountProp]) || 0, date: p.props[dueProp] }));
+      }
+      render();
+    }
+
+    function render() {
+      const [y, m] = month.split('-').map(Number);
+      $('label').textContent = new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      const inMonth = tx.filter(t => t.date.startsWith(month)).sort((a, b) => b.date.localeCompare(a.date));
+      const income = inMonth.filter(t => t.type === 'Income').reduce((s, t) => s + t.amount, 0);
+      const spent = inMonth.filter(t => t.type !== 'Income').reduce((s, t) => s + t.amount, 0);
+      const monthBills = bills.filter(b => b.date.startsWith(month)).sort((a, b) => a.date.localeCompare(b.date));
+      const billSum = monthBills.reduce((s, b) => s + b.amount, 0);
+
+      $('s-in').textContent = EUR.format(income);
+      $('s-out').textContent = EUR.format(spent);
+      $('s-bal').textContent = EUR.format(income - spent);
+      $('s-bal').className = 'v ' + (income - spent >= 0 ? 'pos' : 'neg');
+      $('s-bills').textContent = EUR.format(billSum);
+      $('count').textContent = inMonth.length;
+      $('bills-sum').textContent = monthBills.length ? EUR.format(billSum) : '';
+      $('cats').replaceChildren(...categories.map(c => { const o = el('option'); o.value = c; return o; }));
+
+      const list = $('list');
+      list.replaceChildren();
+      if (!inMonth.length) list.append(el('div', 'empty', 'No transactions this month — add one above.'));
+      for (const t of inMonth) {
+        const row = el('div', 'row');
+        const info = el('div', 't');
+        info.append(el('b', null, t.label || 'Untitled'), el('small', null, `${t.category} · ${parseD(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`));
+        const amt = el('span', 'amt ' + (t.type === 'Income' ? 'pos' : 'neg'), (t.type === 'Income' ? '+' : '−') + EUR.format(t.amount));
+        const del = el('button', 'del', '✕');
+        del.title = 'Delete';
+        del.onclick = async () => { await bd.deletePage(t.id); await load(); };
+        row.append(info, amt, del);
+        list.append(row);
+      }
+
+      const byCat = {};
+      for (const t of inMonth) if (t.type !== 'Income') byCat[t.category] = (byCat[t.category] || 0) + t.amount;
+      const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+      const max = cats[0]?.[1] || 1;
+      const out = $('cats-out');
+      out.replaceChildren();
+      if (!cats.length) out.append(el('div', 'empty', 'No spending yet.'));
+      for (const [name, sum] of cats) {
+        const bar = el('div', 'bar');
+        const top = el('div', 'top');
+        top.append(el('span', null, name), el('span', 'amt', EUR.format(sum)));
+        const track = el('div', 'track');
+        const fill = el('div', 'fill');
+        fill.style.width = (sum / max * 100) + '%';
+        track.append(fill);
+        bar.append(top, track);
+        out.append(bar);
+      }
+
+      const bl = $('bills');
+      bl.replaceChildren();
+      if (!monthBills.length) bl.append(el('div', 'empty', bills.length ? 'No unpaid bills this month.' : 'Add a “Bills & reminders” database to see your bills here.'));
+      for (const b of monthBills) {
+        const row = el('div', 'row');
+        const info = el('div', 't');
+        info.append(el('b', null, (b.icon ? b.icon + ' ' : '') + b.title), el('small', null, parseD(b.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })));
+        row.append(info, el('span', 'amt', EUR.format(b.amount)));
+        bl.append(row);
+      }
+    }
+
+    $('prev').onclick = () => shift(-1);
+    $('next').onclick = () => shift(1);
+    function shift(n) {
+      const [y, m] = month.split('-').map(Number);
+      month = iso(new Date(y, m - 1 + n, 1)).slice(0, 7);
+      render();
+    }
+
+    $('add').addEventListener('submit', async e => {
+      e.preventDefault();
+      await bd.createPage(DB, {
+        title: $('f-label').value.trim(),
+        props: { Amount: Number($('f-amount').value), Date: $('f-date').value, Type: $('f-type').value, Category: $('f-cat').value.trim() || 'Other' },
+      });
+      month = $('f-date').value.slice(0, 7);
+      $('f-label').value = ''; $('f-amount').value = ''; $('f-cat').value = '';
+      $('f-label').focus();
+      await load();
+    });
+
+    init().catch(err => { document.querySelector('.wrap').prepend(el('div', 'empty', 'Error: ' + err.message)); });
+  </script>
+</body>
+</html>

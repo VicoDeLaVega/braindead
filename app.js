@@ -126,7 +126,7 @@ const prettyUrl = u => String(u).replace(/^https?:\/\/(www\.)?/, '').replace(/\/
 
 /* ================= State ================= */
 let S; // initialised at startup (bottom of file)
-const ui = { route: { name: 'home' }, routeKey: '', peek: null, peekWide: false, search: '', cal: {}, dragId: null };
+const ui = { route: { name: 'home' }, routeKey: '', peek: null, peekWide: false, search: '', cal: {}, dragId: null, apps: [] };
 
 function load() {
   try {
@@ -145,11 +145,14 @@ function migrate(d) {
   return d;
 }
 let saveT;
-function save() { clearTimeout(saveT); saveT = setTimeout(saveNow, 150); }
+// savedAt marks the latest edit, so the newest copy wins when syncing with a file.
+function save() { S.savedAt = Date.now(); clearTimeout(saveT); saveT = setTimeout(saveNow, 150); }
 function saveNow() {
   clearTimeout(saveT);
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch (e) { toast("Couldn't save: is the browser storage full?"); }
+  schedulePush();
+  notifyApps();
 }
 window.addEventListener('beforeunload', saveNow);
 window.addEventListener('pagehide', saveNow);
@@ -404,6 +407,8 @@ let softT;
 function softMain() { clearTimeout(softT); softT = setTimeout(() => { renderMain(); renderSidebar(); }, 350); }
 
 function parseHash() {
+  const a = location.hash.match(/^#\/app\/([^/]+)/);
+  if (a) { ui.route = { name: 'app', id: decodeURIComponent(a[1]) }; return; }
   const m = location.hash.match(/^#\/db\/([^/]+)/);
   ui.route = m && dbById(m[1]) ? { name: 'db', id: m[1] } : { name: 'home' };
 }
@@ -447,6 +452,11 @@ function renderSidebar() {
     h('div', { class: 'sb-label' }, 'DATABASES', h('button', { class: 'icon-btn sm', title: 'New database', onclick: openNewDb }, '+')),
     S.dbs.map(db => h('a', { class: 'sb-item' + (ui.route.id === db.id && ui.route.name === 'db' ? ' active' : ''), href: '#/db/' + db.id },
       h('span', { class: 'sb-ico' }, db.icon || '📄'), h('span', { class: 'sb-txt' }, db.name), h('span', { class: 'sb-count' }, openCount(db)))),
+    ui.apps.length ? [
+      h('div', { class: 'sb-label' }, 'APPS'),
+      ui.apps.map(a => h('a', { class: 'sb-item' + (ui.route.name === 'app' && ui.route.id === a.id ? ' active' : ''), href: '#/app/' + encodeURIComponent(a.id), title: a.description || '' },
+        h('span', { class: 'sb-ico' }, a.icon || '🧩'), h('span', { class: 'sb-txt' }, a.name || a.id))),
+    ] : null,
     h('div', { class: 'sb-spacer' }),
     h('div', { class: 'sb-label' }, 'THEME', h('span', { class: 'sb-count' }, THEMES.find(t => t.id === S.theme)?.name)),
     h('div', { class: 'themes' }, THEMES.map(t => h('button', {
@@ -454,6 +464,7 @@ function renderSidebar() {
       style: { background: t.bg, '--ac': t.ac }, onclick: () => { S.theme = t.id; save(); render(); },
     }))),
     h('div', { class: 'sb-tools' },
+      syncButton(),
       h('button', { class: 'sb-item', onclick: enableNotifs }, h('span', { class: 'sb-ico' }, '🔔'), notifOn ? 'Reminders on' : 'Enable reminders'),
       h('button', { class: 'sb-item', onclick: exportICS }, h('span', { class: 'sb-ico' }, '📅'), 'Export to calendar (.ics)'),
       h('button', { class: 'sb-item', onclick: exportJSON }, h('span', { class: 'sb-ico' }, '⬇'), 'Back up (.json)'),
@@ -464,6 +475,8 @@ function renderSidebar() {
 /* ================= Main area ================= */
 function renderMain() {
   const main = $('#main');
+  main.classList.toggle('app-mode', ui.route.name === 'app');
+  if (ui.route.name === 'app') return renderApp(main);
   const key = ui.route.name + (ui.route.id || '');
   const keep = key === ui.routeKey ? main.scrollTop : 0;
   ui.routeKey = key;
@@ -716,10 +729,12 @@ function applyView(db, view) {
 
 /* ---------- Value display ---------- */
 const chip = o => h('span', { class: 'chip c-' + (o.color || 'gray') }, o.name);
-function dateBadge(v, done) {
+// Only due dates get urgency colours; a past start date is not "late".
+function dateBadge(v, done, due = true) {
   const n = diffDays(v, todayISO());
-  const cls = done ? '' : n < 0 ? 'late' : n === 0 ? 'today' : n <= 3 ? 'soon' : '';
-  return h('span', { class: 'date ' + cls, title: parseD(v).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) }, relDate(v));
+  const cls = done || !due ? '' : n < 0 ? 'late' : n === 0 ? 'today' : n <= 3 ? 'soon' : '';
+  return h('span', { class: 'date ' + cls, title: parseD(v).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) },
+    due || n >= 0 ? relDate(v) : fmtDate(v));
 }
 function fmtNum(p, v) {
   if (p.format === 'euro') return EUR.format(v);
@@ -735,7 +750,7 @@ function renderValue(p, v, done) {
       const ps = v.map(pageById).filter(Boolean);
       return ps.length ? ps.map(x => h('span', { class: 'rel-chip', onclick: e => { e.stopPropagation(); openPeek(x.id); } }, (x.icon || '📄') + ' ' + (x.title || 'Untitled'))) : null;
     }
-    case 'date': return dateBadge(v, done);
+    case 'date': return dateBadge(v, done, !!p.due);
     case 'checkbox': return h('span', { class: 'chk-ro' }, '✓ ' + p.name);
     case 'number': return h('span', { class: 'num' }, fmtNum(p, v),
       p.format === 'percent' ? h('span', { class: 'bar' }, h('i', { style: { width: Math.max(0, Math.min(100, v)) + '%' } })) : null);
@@ -769,7 +784,7 @@ function editor(pg, p, where) {
     case 'checkbox':
       return h('input', { type: 'checkbox', class: 'chk', checked: !!v, 'aria-label': p.name, onchange: e => commit(e.target.checked) });
     case 'date':
-      return h('button', { class: 'cell-btn', onclick: e => datePop(e.currentTarget, v, commit) }, v ? dateBadge(v, isDone(pg)) : ph);
+      return h('button', { class: 'cell-btn', onclick: e => datePop(e.currentTarget, v, commit) }, v ? dateBadge(v, isDone(pg), !!p.due) : ph);
     case 'select': case 'multi':
       return h('button', { class: 'cell-btn', onclick: e => selectMenu(e.currentTarget, p, v, commit) }, renderValue(p, v) || ph);
     case 'relation':
@@ -956,7 +971,7 @@ function renderCalendar(body, db, view, pages) {
         h('button', { class: 'cal-add', title: 'Add', onclick: () => createAndOpen(db, { ...defaultsFor(view), [dp.id]: s }) }, '+')),
       items.map(pg => {
         const done = isDone(pg);
-        const it = h('div', { class: 'cal-item' + (done ? ' done' : '') + (!done && s < T ? ' late' : ''), title: pg.title, onclick: () => openPeek(pg.id) },
+        const it = h('div', { class: 'cal-item' + (done ? ' done' : '') + (!done && dp.due && s < T ? ' late' : ''), title: pg.title, onclick: () => openPeek(pg.id) },
           (pg.icon ? pg.icon + ' ' : '') + (pg.title || 'Untitled'));
         makeDraggable(it, pg);
         return it;
@@ -1653,6 +1668,319 @@ $('#import-file').addEventListener('change', async e => {
   } catch (err) { toast('Invalid file: this is not a Braindead backup.'); }
 });
 
+/* ================= Apps (HTML pages in apps/, listed in apps/apps.json) ================= */
+// Apps run in a sandboxed iframe (no access to this page or its storage) and talk to
+// Braindead through postMessage — see apps/braindead-sdk.js and CLAUDE.md.
+async function loadApps() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const r = await fetch('apps/apps.json', { cache: 'no-cache' });
+    if (!r.ok) return;
+    const list = await r.json();
+    ui.apps = Array.isArray(list) ? list.filter(a => a && a.id && a.file) : [];
+  } catch (e) { return; }
+  renderSidebar();
+  if (ui.route.name === 'app') renderMain();
+}
+const menuBtn = () => h('button', { class: 'menu-btn', 'aria-label': 'Menu', onclick: () => document.body.classList.toggle('sb-open') }, '☰');
+function renderApp(main) {
+  const app = ui.apps.find(a => a.id === ui.route.id);
+  const current = main.querySelector('iframe.app-frame');
+  // Moving or recreating an iframe reloads it, so keep the running one.
+  if (current && app && current.dataset.app === app.id) { pushTheme(current); return; }
+  ui.routeKey = 'app' + ui.route.id;
+  main.innerHTML = '';
+  if (!app) {
+    main.append(menuBtn(), h('div', { class: 'page-wrap' }, h('div', { class: 'empty' }, ui.apps.length ? 'This app does not exist.' : 'Loading…')));
+    return;
+  }
+  const frame = h('iframe', {
+    class: 'app-frame', 'data-app': app.id, src: 'apps/' + app.file, title: app.name,
+    sandbox: 'allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox',
+  });
+  frame.addEventListener('load', () => pushTheme(frame));
+  main.append(h('div', { class: 'app-wrap' },
+    h('header', { class: 'app-head' }, menuBtn(), h('span', { class: 'ai' }, app.icon || '🧩'), h('b', null, app.name || app.id),
+      app.description ? h('span', { class: 'muted' }, app.description) : null),
+    frame));
+}
+const THEME_VARS = ['--bg', '--side', '--surface', '--surface2', '--col', '--hover', '--border', '--border2', '--text', '--muted', '--faint',
+  '--accent', '--accent-fg', '--accent-soft', '--danger', '--warn', '--ok', '--shadow', '--shadow-lg', '--radius', '--font', '--title-font',
+  ...COLORS.flatMap(c => [`--${c}-bg`, `--${c}-fg`])];
+function pushTheme(frame) {
+  const cs = getComputedStyle(document.documentElement);
+  const vars = Object.fromEntries(THEME_VARS.map(v => [v, cs.getPropertyValue(v).trim()]));
+  frame.contentWindow?.postMessage({ bd: 1, event: 'theme', data: { name: S.theme, dark: S.theme === 'nuit' || S.theme === 'encre', vars } }, '*');
+}
+let notifyT;
+function notifyApps() {
+  clearTimeout(notifyT);
+  notifyT = setTimeout(() => document.querySelectorAll('iframe.app-frame').forEach(f => f.contentWindow?.postMessage({ bd: 1, event: 'change' }, '*')), 200);
+}
+
+// --- Bridge: plain-language view of databases and pages for apps ---
+function findDb(ref) {
+  const db = dbById(ref) || S.dbs.find(d => norm(d.name) === norm(ref));
+  if (!db) throw new Error(`Database "${ref}" not found`);
+  return db;
+}
+const friendlyDb = db => ({
+  id: db.id, name: db.name, icon: db.icon, template: db.tpl || null,
+  properties: db.props.map(p => ({
+    name: p.name, type: p.type,
+    ...(p.options ? { options: p.options.map(o => o.name) } : {}),
+    ...(p.format ? { format: p.format } : {}), ...(p.due ? { due: true } : {}), ...(p.done ? { done: true } : {}),
+    ...(p.target ? { target: dbById(p.target)?.name || null } : {}),
+  })),
+});
+function friendlyPage(pg) {
+  const db = dbById(pg.db), props = {};
+  for (const p of db.props) {
+    const v = pg.props[p.id];
+    if (p.type === 'select') props[p.name] = p.options.find(o => o.id === v)?.name ?? null;
+    else if (p.type === 'multi') props[p.name] = (v || []).map(id => p.options.find(o => o.id === id)?.name).filter(Boolean);
+    else if (p.type === 'relation') props[p.name] = (v || []).map(pageById).filter(Boolean).map(x => ({ id: x.id, title: x.title }));
+    else if (p.type === 'checkbox') props[p.name] = !!v;
+    else props[p.name] = v ?? null;
+  }
+  return { id: pg.id, database: db.name, title: pg.title, icon: pg.icon, done: isDone(pg), created: pg.created, updated: pg.updated, props };
+}
+function optionId(p, name) {
+  let o = p.options.find(x => norm(x.name) === norm(name));
+  if (!o) { o = opt(String(name), COLORS[p.options.length % COLORS.length]); p.options.push(o); }
+  return o.id;
+}
+function applyFriendly(db, pg, data) {
+  if (data.title != null) pg.title = String(data.title);
+  if (data.icon != null) pg.icon = String(data.icon);
+  for (const [name, val] of Object.entries(data.props || {})) {
+    const p = db.props.find(x => norm(x.name) === norm(name));
+    if (!p) throw new Error(`Unknown property "${name}" in ${db.name}`);
+    let v;
+    if (val == null || val === '') v = null;
+    else if (p.type === 'select') v = optionId(p, val);
+    else if (p.type === 'multi') v = [].concat(val).map(n => optionId(p, n));
+    else if (p.type === 'relation') {
+      const target = dbById(p.target);
+      v = [].concat(val).map(x => pageById(x?.id || x)?.id || (target && pagesOf(target).find(t => norm(t.title) === norm(x?.title || x))?.id)).filter(Boolean);
+    } else if (p.type === 'checkbox') v = !!val;
+    else if (p.type === 'number') v = Number(val);
+    else if (p.type === 'date') v = String(val).slice(0, 10);
+    else if (p.type === 'recur') v = val in RECUR ? val : null;
+    else v = String(val);
+    setProp(pg, p, v);
+  }
+}
+const APP_API = {
+  getDatabases: () => S.dbs.map(friendlyDb),
+  getPages: (app, db) => pagesOf(findDb(db)).sort((a, b) => (a.order || 0) - (b.order || 0)).map(friendlyPage),
+  getPage: (app, id) => { const pg = pageById(id); return pg ? friendlyPage(pg) : null; },
+  createPage(app, dbRef, data = {}) {
+    const db = findDb(dbRef);
+    const pg = newPage(db);
+    S.pages.push(pg);
+    applyFriendly(db, pg, data);
+    save();
+    return friendlyPage(pg);
+  },
+  updatePage(app, id, data = {}) {
+    const pg = pageById(id);
+    if (!pg) throw new Error(`Page "${id}" not found`);
+    applyFriendly(dbById(pg.db), pg, data);
+    save();
+    return friendlyPage(pg);
+  },
+  deletePage(app, id) {
+    const i = S.pages.findIndex(p => p.id === id);
+    if (i >= 0) { S.pages.splice(i, 1); save(); }
+    return i >= 0;
+  },
+  // Creates the database if missing, and adds any missing properties to an existing one.
+  ensureDatabase(app, spec = {}) {
+    if (!spec.name) throw new Error('ensureDatabase needs a name');
+    let db = S.dbs.find(d => norm(d.name) === norm(spec.name));
+    const isNew = !db;
+    if (isNew) db = { id: uid(), name: spec.name, icon: spec.icon || '📄', tpl: 'app:' + app, props: [], views: [] };
+    let changed = isNew;
+    for (const ps of spec.properties || []) {
+      if (db.props.some(p => norm(p.name) === norm(ps.name))) continue;
+      if (!TYPES[ps.type]) throw new Error(`Unknown property type "${ps.type}"`);
+      const extra = {};
+      if (ps.type === 'select' || ps.type === 'multi') extra.options = (ps.options || []).map((o, i) => typeof o === 'string'
+        ? opt(o, COLORS[i % COLORS.length]) : opt(o.name, o.color || COLORS[i % COLORS.length], o.done));
+      if (ps.format) extra.format = ps.format;
+      if (ps.due) extra.due = true;
+      if (ps.done) extra.done = true;
+      if (ps.type === 'relation') extra.target = findDb(ps.target).id;
+      db.props.push(mkProp(ps.name, ps.type, extra));
+      changed = true;
+    }
+    if (isNew) {
+      db.views = [mkView('Table', 'table')];
+      const sel = db.props.find(p => p.type === 'select'), date = dueProp(db);
+      if (sel) db.views.push(mkView('Kanban', 'kanban', { groupBy: sel.id }));
+      if (date) db.views.push(mkView('Calendar', 'calendar', { dateProp: date.id }));
+      db.activeView = db.views[0].id;
+      S.dbs.push(db);
+    }
+    if (changed) save();
+    return friendlyDb(db);
+  },
+  storeGet: (app, key) => S.appData?.[app]?.[key] ?? null,
+  storeSet(app, key, value) {
+    ((S.appData ||= {})[app] ||= {})[key] = value;
+    save();
+    return true;
+  },
+};
+window.addEventListener('message', e => {
+  const frame = [...document.querySelectorAll('iframe.app-frame')].find(f => f.contentWindow === e.source);
+  const m = e.data;
+  if (!frame || !m || m.bd !== 1 || !m.method) return;
+  let reply;
+  try {
+    if (!Object.hasOwn(APP_API, m.method)) throw new Error('Unknown method ' + m.method);
+    reply = { bd: 1, id: m.id, result: APP_API[m.method](frame.dataset.app, ...(m.args || [])) };
+  } catch (err) { reply = { bd: 1, id: m.id, error: String(err.message || err) }; }
+  e.source.postMessage(JSON.parse(JSON.stringify(reply)), '*');
+  if (!m.method.startsWith('get') && m.method !== 'storeGet') { renderSidebar(); updateTitle(); }
+});
+
+/* ================= Sync file (Chrome / Edge desktop) ================= */
+// Optional auto-save to a file the user picks — e.g. in a Google Drive, Dropbox or OneDrive
+// folder, which then backs it up and shares it between computers. The newest copy wins.
+const canFile = 'showSaveFilePicker' in window;
+const sync = { handle: null, state: 'off', pushT: null }; // state: off | ok | reconnect | error
+function idb(mode, fn) {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open('braindead', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onerror = () => reject(r.error);
+    r.onsuccess = () => {
+      const tx = r.result.transaction('kv', mode);
+      const q = fn(tx.objectStore('kv'));
+      tx.oncomplete = () => resolve(q.result);
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+const idbGet = k => idb('readonly', s => s.get(k));
+const idbSet = (k, v) => idb('readwrite', s => s.put(v, k));
+const idbDel = k => idb('readwrite', s => s.delete(k));
+
+async function initSync() {
+  if (!canFile) return;
+  try { sync.handle = await idbGet('syncFile'); } catch (e) { return; }
+  if (!sync.handle) return;
+  sync.state = (await sync.handle.queryPermission({ mode: 'readwrite' })) === 'granted' ? 'ok' : 'reconnect';
+  if (sync.state === 'ok') await pullFile();
+  renderSidebar();
+}
+async function readFile() {
+  const text = await (await sync.handle.getFile()).text();
+  try {
+    const d = JSON.parse(text);
+    return d && Array.isArray(d.dbs) && Array.isArray(d.pages) ? d : null;
+  } catch (e) { return null; } // empty, or half-written by the cloud client
+}
+async function pullFile() {
+  if (sync.state !== 'ok') return;
+  try {
+    const d = await readFile();
+    if (!d || (d.savedAt || 0) <= (S.savedAt || 0)) return;
+    S = migrate(d);
+    localStorage.setItem(KEY, JSON.stringify(S));
+    parseHash(); render(); notifyApps();
+    toast('Loaded the latest data from ' + sync.handle.name);
+  } catch (e) { syncError(e); }
+}
+function schedulePush() {
+  if (sync.state !== 'ok') return;
+  clearTimeout(sync.pushT);
+  sync.pushT = setTimeout(pushFile, 800);
+}
+async function pushFile() {
+  if (sync.state !== 'ok') return;
+  try {
+    const d = await readFile();
+    if (d && (d.savedAt || 0) > (S.savedAt || 0)) return pullFile(); // another computer saved more recently
+    const w = await sync.handle.createWritable();
+    await w.write(JSON.stringify(S));
+    await w.close();
+  } catch (e) { syncError(e); }
+}
+function syncError(e) {
+  sync.state = e?.name === 'NotAllowedError' ? 'reconnect' : 'error';
+  renderSidebar();
+}
+const FILE_TYPES = [{ description: 'Braindead data', accept: { 'application/json': ['.json'] } }];
+async function connectFile(create) {
+  try {
+    const handle = create
+      ? await showSaveFilePicker({ suggestedName: 'braindead.json', types: FILE_TYPES })
+      : (await showOpenFilePicker({ types: FILE_TYPES }))[0];
+    if ((await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') return toast('Permission refused by the browser.');
+    sync.handle = handle;
+    sync.state = 'ok';
+    await idbSet('syncFile', handle);
+    const d = create ? null : await readFile();
+    if (d && confirm(`Load the data from “${handle.name}”?\n\nOK: replace what is in this browser with the file.\nCancel: keep this browser's data and overwrite the file.`)) {
+      S = migrate(d);
+      localStorage.setItem(KEY, JSON.stringify(S));
+      parseHash(); render();
+    } else {
+      S.savedAt = Date.now();
+      const w = await handle.createWritable();
+      await w.write(JSON.stringify(S));
+      await w.close();
+    }
+    closeModal(); renderSidebar();
+    toast(`Auto-saving to ${handle.name} ✓`);
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('Could not use this file: ' + e.message);
+  }
+}
+async function reconnectFile() {
+  try {
+    if ((await sync.handle.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
+    sync.state = 'ok';
+    await pullFile();
+    schedulePush();
+    renderSidebar();
+    toast('Sync file reconnected ✓');
+  } catch (e) { syncError(e); }
+}
+async function disconnectFile() {
+  sync.handle = null;
+  sync.state = 'off';
+  await idbDel('syncFile').catch(() => {});
+  closeModal(); renderSidebar();
+  toast('Sync file disconnected — your data stays in this browser.');
+}
+function syncButton() {
+  if (sync.state === 'reconnect') return h('button', { class: 'sb-item warn', onclick: reconnectFile }, h('span', { class: 'sb-ico' }, '⚠'), 'Reconnect sync file');
+  if (sync.state === 'error') return h('button', { class: 'sb-item warn', onclick: openSyncModal }, h('span', { class: 'sb-ico' }, '⚠'), 'Sync file error');
+  if (sync.state === 'ok') return h('button', { class: 'sb-item', onclick: openSyncModal, title: 'Auto-saving to this file' }, h('span', { class: 'sb-ico' }, '☁'), h('span', { class: 'sb-txt' }, 'Synced: ' + sync.handle.name));
+  return h('button', { class: 'sb-item', onclick: openSyncModal }, h('span', { class: 'sb-ico' }, '☁'), 'Save to a file (Drive…)');
+}
+function openSyncModal() {
+  modal('Save to a file', [
+    h('p', { class: 'sync-p' }, 'Braindead always saves automatically in this browser. You can also auto-save to a file on your computer.'),
+    h('p', { class: 'sync-p' }, 'Put that file in your ', h('b', null, 'Google Drive, Dropbox or OneDrive'), ' folder: it is then backed up online and shared between your computers. On your other computer, choose “Use an existing file” and pick the same one.'),
+    !canFile
+      ? h('div', { class: 'tip' }, 'This browser can’t write files. It works in Chrome and Edge on a computer — elsewhere, use “Back up (.json)”.')
+      : [
+        sync.handle ? h('div', { class: 'tip' }, sync.state === 'ok' ? '✓ Connected to ' : '⚠ Permission needed for ', h('b', null, sync.handle.name),
+          sync.state !== 'ok' ? h('button', { class: 'btn', onclick: reconnectFile }, 'Reconnect') : null) : null,
+        h('div', { class: 'modal-foot', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } },
+          h('button', { class: 'btn primary', onclick: () => connectFile(true) }, 'Create a new file'),
+          h('button', { class: 'btn', onclick: () => connectFile(false) }, 'Use an existing file'),
+          sync.handle ? h('button', { class: 'btn danger', onclick: disconnectFile }, 'Disconnect') : null),
+      ],
+  ]);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pullFile(); });
+
 /* ================= Keyboard & startup ================= */
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openQuickFind(); return; }
@@ -1675,5 +2003,9 @@ parseHash();
 render();
 saveNow();
 checkNotifs();
+loadApps();
+initSync();
+// Ask the browser never to evict our data to free up space.
+navigator.storage?.persist?.().catch(() => {});
 setInterval(() => { checkNotifs(); updateTitle(); }, 15 * 60 * 1000);
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});

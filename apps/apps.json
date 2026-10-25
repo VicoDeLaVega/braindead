@@ -1,0 +1,9 @@
+[
+  {
+    "id": "finances",
+    "name": "Finances",
+    "icon": "💰",
+    "file": "finances.html",
+    "description": "Monthly income, spending by category and upcoming bills"
+  }
+]
