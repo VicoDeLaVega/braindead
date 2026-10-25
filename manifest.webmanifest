@@ -1,0 +1,12 @@
+{
+  "name": "Mon espace",
+  "short_name": "Mon espace",
+  "description": "Pages, tâches, kanban, courses, projets, papiers et paiements.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2f80ed",
+  "lang": "fr",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

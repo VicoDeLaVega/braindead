@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr" data-theme="neige">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mon espace</title>
+  <meta name="description" content="Pages, tâches, kanban, courses, projets, papiers et paiements — 100 % local.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Applique le thème avant le premier rendu pour éviter un flash.
+    try { var d = JSON.parse(localStorage.getItem('monespace.v1')); if (d && d.theme) document.documentElement.dataset.theme = d.theme; } catch (e) {}
+  </script>
+</head>
+<body>
+  <aside id="sidebar"></aside>
+  <div class="sb-backdrop" onclick="document.body.classList.remove('sb-open')"></div>
+  <main id="main"></main>
+  <div id="peek-root"></div>
+  <div id="modal-root"></div>
+  <div id="toasts"></div>
+  <input type="file" id="import-file" accept=".json,application/json" hidden>
+  <script src="app.js"></script>
+</body>
+</html>
