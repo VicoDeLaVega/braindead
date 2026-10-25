@@ -1846,11 +1846,305 @@ window.addEventListener('message', e => {
   if (!m.method.startsWith('get') && m.method !== 'storeGet') { renderSidebar(); updateTitle(); }
 });
 
-/* ================= Sync file (Chrome / Edge desktop) ================= */
-// Optional auto-save to a file the user picks — e.g. in a Google Drive, Dropbox or OneDrive
-// folder, which then backs it up and shares it between computers. The newest copy wins.
-const canFile = 'showSaveFilePicker' in window;
-const sync = { handle: null, state: 'off', pushT: null }; // state: off | ok | reconnect | error
+/* ================= Page files: readable text on top, viewer code below ================= */
+// A page file is Markdown with YAML front matter. In the .md.html format the same text is
+// followed by a small viewer, so the file reads fine in a text editor and looks good in a browser.
+// bdMarkdown, bdFrontmatter, bdYaml and bdView are self-contained: they are copied into every file.
+
+function bdMarkdown(md) {
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const inl = s => {
+    const keep = [];
+    s = s.replace(/\\([\\*`[\]~<_#>.\-])/g, (m, c) => '\u0001' + (keep.push(c) - 1) + '\u0002');
+    s = esc(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/~~(.+?)~~/g, '<s>$1</s>')
+      .replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/g, '<u>$1</u>')
+      .replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (m, t, u) => /^(https?:|mailto:|tel:)/i.test(u) ? '<a href="' + u + '">' + t + '</a>' : m)
+      .replace(/\n/g, '<br>');
+    return s.replace(/\u0001(\d+)\u0002/g, (m, i) => esc(keep[i]));
+  };
+  const listRe = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
+  const blockStart = /^(#{1,6}\s|>|\s*([-*]|\d+\.)\s|(-{3,}|\*{3,})\s*$)/;
+  const lines = String(md || '').replace(/\r/g, '').split('\n');
+  let html = '', i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    const hm = l.match(/^(#{1,6})\s+(.*)$/);
+    if (hm) {
+      const n = Math.min(3, Math.max(1, hm[1].length - 1));
+      html += '<h' + n + '>' + inl(hm[2]) + '</h' + n + '>';
+      i++;
+      continue;
+    }
+    if (/^(-{3,}|\*{3,})\s*$/.test(l)) { html += '<hr>'; i++; continue; }
+    if (/^>/.test(l)) {
+      const q = [];
+      while (i < lines.length && /^>/.test(lines[i])) q.push(lines[i++].replace(/^>\s?/, ''));
+      html += '<blockquote>' + inl(q.join('\n')) + '</blockquote>';
+      continue;
+    }
+    if (listRe.test(l)) {
+      const stack = [];
+      while (i < lines.length && listRe.test(lines[i])) {
+        const [, sp, mk, rest] = lines[i++].match(listRe);
+        const d = Math.floor(sp.replace(/\t/g, '  ').length / 2);
+        const ord = /\d/.test(mk);
+        const task = !ord && /^\[[ xX]\](\s|$)/.test(rest);
+        const tag = ord ? 'ol' : 'ul';
+        while (stack.length && stack[stack.length - 1].d > d) html += '</li></' + stack.pop().tag + '>';
+        const top = stack[stack.length - 1];
+        if (!top || top.d < d) { html += '<' + tag + (task ? ' class="checklist"' : '') + '>'; stack.push({ d, tag }); }
+        else html += '</li>';
+        html += (task ? '<li data-done="' + /x/i.test(rest[1]) + '">' + inl(rest.replace(/^\[[ xX]\]\s?/, '')) : '<li>' + inl(rest));
+      }
+      while (stack.length) html += '</li></' + stack.pop().tag + '>';
+      continue;
+    }
+    const p = [l];
+    i++;
+    while (i < lines.length && lines[i].trim() && !blockStart.test(lines[i])) p.push(lines[i++]);
+    html += '<p>' + inl(p.join('\n')) + '</p>';
+  }
+  return html;
+}
+
+function bdYaml(raw) {
+  raw = String(raw).trim();
+  try {
+    if (raw === '') return '';
+    if (raw[0] === '"') return JSON.parse(raw);
+    if (raw[0] === '[' && raw[raw.length - 1] === ']') {
+      const s = raw.slice(1, -1), items = [];
+      let i = 0;
+      while (i < s.length) {
+        while (s[i] === ' ') i++;
+        if (i >= s.length) break;
+        if (s[i] === '"') {
+          let j = i + 1;
+          while (j < s.length && s[j] !== '"') j += s[j] === '\\' ? 2 : 1;
+          items.push(JSON.parse(s.slice(i, j + 1)));
+          i = s.indexOf(',', j);
+          if (i < 0) break;
+        } else {
+          let j = s.indexOf(',', i);
+          if (j < 0) j = s.length;
+          items.push(s.slice(i, j).trim());
+          i = j;
+        }
+        i++;
+      }
+      return items;
+    }
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw);
+  } catch (e) { /* fall through: keep the raw text */ }
+  return raw;
+}
+
+function bdFrontmatter(text) {
+  text = String(text).replace(/^\uFEFF/, '').replace(/\r/g, '');
+  const cut = text.indexOf('<!-- ─── Braindead viewer');
+  if (cut >= 0) text = text.slice(0, cut);
+  const meta = [];
+  let body = text;
+  const fm = text.match(/^---\n([\s\S]*?)\n---[ \t]*(\n|$)/);
+  if (fm) {
+    body = text.slice(fm[0].length);
+    for (const line of fm[1].split('\n')) {
+      const kv = line.match(/^("(?:[^"\\]|\\.)*"|[^:]+):(?:\s(.*))?$/);
+      if (!kv) continue;
+      let key = kv[1].trim();
+      if (key[0] === '"') { try { key = JSON.parse(key); } catch (e) { /* keep as is */ } }
+      meta.push([key, (kv[2] || '').trim()]);
+    }
+  }
+  let title = null;
+  const t = body.match(/^\s*#(?:[ \t]+(.*))?[ \t]*(\n|$)/);
+  if (t) { title = (t[1] || '').trim(); body = body.slice(t[0].length); }
+  return { meta, title, body: body.replace(/^\n+|\s+$/g, '') };
+}
+
+function bdView() {
+  // Rebuild the text above this script (the browser may have read bits of it as tags).
+  let text = '';
+  for (const n of [...document.body.childNodes]) {
+    if (n.nodeType === 8 && n.data.indexOf('Braindead viewer') >= 0) break;
+    text += n.nodeType === 3 ? n.nodeValue : n.nodeType === 1 ? n.outerHTML : '';
+  }
+  document.querySelectorAll('style, meta').forEach(el => document.head.appendChild(el));
+  const { meta, title, body } = bdFrontmatter(text);
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const get = k => { const m = meta.find(x => x[0] === k); return m ? bdYaml(m[1]) : ''; };
+  let rows = '';
+  for (const [k, raw] of meta) {
+    if (['id', 'icon', 'order', 'created', 'updated'].indexOf(k) >= 0) continue;
+    const v = bdYaml(raw);
+    let html;
+    if (Array.isArray(v)) html = v.map(x => '<span class="chip">' + esc(x) + '</span>').join('');
+    else if (v === true || v === false) html = v ? '☑' : '☐';
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) html = esc(new Date(v + 'T00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }));
+    else if (/^https?:\/\//.test(v)) html = '<a href="' + esc(v) + '">' + esc(v) + '</a>';
+    else html = esc(v);
+    rows += '<div class="k">' + esc(k) + '</div><div class="v">' + html + '</div>';
+  }
+  const updated = get('updated');
+  document.title = title || 'Untitled';
+  document.body.innerHTML = '<main class="bd">' + (get('icon') ? '<div class="icon">' + esc(get('icon')) + '</div>' : '') +
+    '<h1 class="title">' + esc(title || 'Untitled') + '</h1>' + (rows ? '<div class="props">' + rows + '</div>' : '') +
+    '<article>' + bdMarkdown(body) + '</article>' +
+    '<footer>Braindead page' + (updated ? ' · edited ' + esc(new Date(updated).toLocaleString()) : '') + '</footer></main>';
+}
+
+const VIEWER_CSS = `body{margin:0;white-space:pre-wrap;background:#fff;color:#37352f;font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+.bd{white-space:normal;max-width:760px;margin:0 auto;padding:56px 24px 80px}
+.icon{font-size:46px;line-height:1}.title{font-size:34px;line-height:1.2;margin:12px 0 18px}
+.props{display:grid;grid-template-columns:minmax(110px,170px) 1fr;gap:6px 14px;font-size:14px;padding:4px 0 18px;margin-bottom:18px;border-bottom:1px solid #ebebe9}
+.k{color:#787774}.chip{display:inline-block;background:#ebeced;border-radius:999px;padding:0 9px;font-size:13px;margin:0 4px 3px 0}
+article h1{font-size:26px;margin:24px 0 6px}article h2{font-size:21px;margin:20px 0 4px}article h3{font-size:17px;margin:16px 0 2px}article p{margin:6px 0}
+ul.checklist{list-style:none;padding-left:4px}ul.checklist li::before{content:"\\2610  "}ul.checklist li[data-done=true]::before{content:"\\2611  "}li[data-done=true]{color:#9b9a97;text-decoration:line-through}
+blockquote{border-left:3px solid currentColor;margin:8px 0;padding:2px 14px}hr{border:0;border-top:1px solid #dcdcd8;margin:18px 0}
+a{color:#2f80ed}code{background:#f1f1ef;padding:1px 5px;border-radius:4px;font-size:.9em}footer{margin-top:44px;color:#a5a29c;font-size:12.5px}
+@media (prefers-color-scheme:dark){body{background:#191919;color:#e6e6e3}.props{border-color:#2f2f2f}.k{color:#9b9a97}.chip{background:#3a3a3a}code{background:#2c2c2c}a{color:#5aa2d6}}`;
+const VIEW_MARK = '<!-- ─── Braindead viewer ─── Open this file in a browser for a formatted view. The page itself is the text above; everything below is display code. -->';
+let viewerCode;
+const viewer = () => viewerCode ||= `${VIEW_MARK}\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<style>\n${VIEWER_CSS}\n</style>\n<script>\n${[bdMarkdown, bdYaml, bdFrontmatter, bdView].map(f => f.toString().replace(/\r/g, '')).join('\n')}\nbdView();\n</script>\n`;
+
+// Notes editor HTML -> Markdown (the inverse of bdMarkdown).
+function htmlToMd(html) {
+  if (!html) return '';
+  const root = document.createElement('div');
+  root.innerHTML = html;
+  const escInline = s => s.replace(/([\\*`[\]~<])/g, '\\$1');
+  const escStart = s => s.replace(/^(#|>|-(?=\s)|-{3,}\s*$|\d+(?=\.\s))/, m => /^\d/.test(m) ? m + '\\' : '\\' + m);
+  const wrap = (s, mk) => { const m = s.match(/^(\s*)([\s\S]*?)(\s*)$/); return m[2] ? m[1] + mk + m[2] + mk + m[3] : s; };
+  const BLOCK = /^(P|DIV|H[1-6]|UL|OL|BLOCKQUOTE|HR|LI)$/;
+  const inline = n => [...n.childNodes].map(c => {
+    if (c.nodeType === 3) return escInline(c.nodeValue.replace(/[\n\t]+/g, ' ').replace(/ /g, ' '));
+    if (c.nodeType !== 1) return '';
+    const t = c.tagName;
+    if (t === 'UL' || t === 'OL') return '';
+    if (t === 'BR') return '\n';
+    const s = inline(c);
+    if (t === 'B' || t === 'STRONG') return wrap(s, '**');
+    if (t === 'I' || t === 'EM') return wrap(s, '*');
+    if (t === 'S' || t === 'STRIKE' || t === 'DEL') return wrap(s, '~~');
+    if (t === 'U') return s.trim() ? '<u>' + s + '</u>' : s;
+    if (t === 'CODE') return '`' + c.textContent + '`';
+    if (t === 'A' && c.getAttribute('href')) return '[' + s + '](' + c.getAttribute('href').replace(/[()\s]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')) + ')';
+    if (BLOCK.test(t)) return s + '\n';
+    return s;
+  }).join('');
+  const out = [];
+  let listNo = 0;
+  const push = (t, list = 0) => out.push({ t, list });
+  const list = (el, depth, id = ++listNo) => {
+    let n = 1;
+    for (const li of el.children) {
+      if (li.tagName === 'UL' || li.tagName === 'OL') { list(li, depth + 1, id); continue; }
+      const mk = el.tagName === 'OL' ? (n++) + '. ' : el.classList.contains('checklist') ? (li.dataset.done === 'true' ? '- [x] ' : '- [ ] ') : '- ';
+      push('  '.repeat(depth) + mk + inline(li).replace(/\s*\n\s*/g, ' ').trim(), id);
+      for (const sub of li.children) if (sub.tagName === 'UL' || sub.tagName === 'OL') list(sub, depth + 1, id);
+    }
+  };
+  const walk = node => {
+    for (const c of node.childNodes) {
+      if (c.nodeType === 3) { const t = c.nodeValue.trim(); if (t) push(escStart(escInline(t))); continue; }
+      if (c.nodeType !== 1) continue;
+      const t = c.tagName;
+      if (t === 'UL' || t === 'OL') list(c, 0);
+      else if (/^H[1-6]$/.test(t)) push('#'.repeat(Math.min(4, +t[1] + 1)) + ' ' + inline(c).replace(/\s*\n\s*/g, ' ').trim());
+      else if (t === 'HR') push('---');
+      else if (t === 'BLOCKQUOTE') push(inline(c).replace(/\n+$/, '').split('\n').map(l => '> ' + l.trim()).join('\n'));
+      else if (t === 'BR') continue;
+      else if ([...c.children].some(x => BLOCK.test(x.tagName))) walk(c);
+      else {
+        const s = inline(c).replace(/\n+$/, '');
+        if (s.trim()) push(s.split('\n').map(l => escStart(l.trim())).join('\n'));
+      }
+    }
+  };
+  walk(root);
+  return out.map((b, i) => (i ? (b.list && b.list === out[i - 1].list ?'\n' : '\n\n') : '') + b.t).join('');
+}
+
+// YAML scalars: quote only when needed, so files stay easy to read.
+function yq(s, inList) {
+  s = String(s);
+  const quote = s === '' || /^[\s\-?:,[\]{}#&*!|>'"%@`]/.test(s) || /\s$|: |\s#|:$|[\n\r]/.test(s) ||
+    /^(true|false|null|~)$/i.test(s) || /^-?\d+(\.\d+)?$/.test(s) || (inList && /[,[\]]/.test(s));
+  return quote ? JSON.stringify(s) : s;
+}
+const yKey = k => /[:#\n"]|^[\s'[{\-]|\s$/.test(k) ? JSON.stringify(k) : k;
+function pageToFile(pg, db, format) {
+  const lines = ['---', 'id: ' + pg.id];
+  if (pg.icon) lines.push('icon: ' + yq(pg.icon));
+  for (const p of db.props) {
+    const v = pg.props[p.id];
+    if (isEmpty(v) && v !== 0) continue;
+    let out;
+    if (p.type === 'select') out = yq(p.options.find(o => o.id === v)?.name ?? '');
+    else if (p.type === 'multi') out = '[' + v.map(id => p.options.find(o => o.id === id)?.name).filter(Boolean).map(n => yq(n, true)).join(', ') + ']';
+    else if (p.type === 'relation') out = '[' + v.map(pageById).filter(Boolean).map(x => yq(x.title || 'Untitled', true)).join(', ') + ']';
+    else if (p.type === 'number' || p.type === 'checkbox') out = String(v);
+    else out = yq(v);
+    lines.push(yKey(p.name) + ': ' + out);
+  }
+  lines.push('created: ' + new Date(pg.created).toISOString(), 'updated: ' + new Date(pg.updated).toISOString(), 'order: ' + pg.order, '---', '', '# ' + (pg.title || ''));
+  const body = htmlToMd(pg.content);
+  if (body) lines.push('', body);
+  const text = lines.join('\n') + '\n';
+  // The byte-order mark makes browsers read the file as UTF-8 without a <meta charset> on top.
+  return format === 'md' ? text : '\uFEFF' + text + '\n' + viewer();
+}
+function fromYaml(p, v, pending) {
+  if (v === '' || v == null) return null;
+  switch (p.type) {
+    case 'select': return optionId(p, Array.isArray(v) ? v[0] : v);
+    case 'multi': return [].concat(v).filter(x => x !== '').map(n => optionId(p, n));
+    case 'relation': pending.push([p, [].concat(v)]); return null; // resolved once every page is loaded
+    case 'number': { const n = Number(v); return isNaN(n) ? null : n; }
+    case 'checkbox': return v === true || /^(true|yes|x|1)$/i.test(String(v));
+    case 'date': return /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).slice(0, 10) : null;
+    case 'recur': return String(v) in RECUR && v ? String(v) : null;
+    default: return Array.isArray(v) ? v.join(', ') : String(v);
+  }
+}
+// Parses a page file. Unknown keys (e.g. added by hand) become new properties of the database.
+function fileToPage(text, db) {
+  const { meta, title, body } = bdFrontmatter(text);
+  const out = { id: null, icon: '', title: title ?? '', props: {}, content: bdMarkdown(body), created: null, updated: null, order: null, pending: [] };
+  for (const [key, raw] of meta) {
+    const v = bdYaml(raw), k = norm(key);
+    if (k === 'id') { out.id = String(v); continue; }
+    if (k === 'icon') { out.icon = String(v); continue; }
+    if (k === 'created' || k === 'updated') { const t = Date.parse(v); if (!isNaN(t)) out[k] = t; continue; }
+    if (k === 'order') { if (typeof v === 'number') out.order = v; continue; }
+    let p = db.props.find(x => norm(x.name) === k);
+    if (!p) {
+      const type = Array.isArray(v) ? 'multi' : typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'checkbox' : /^\d{4}-\d{2}-\d{2}$/.test(v) ? 'date' : 'text';
+      p = mkProp(key, type);
+      db.props.push(p);
+    }
+    const val = fromYaml(p, v, out.pending);
+    if (!isEmpty(val) || val === 0) out.props[p.id] = val;
+  }
+  return out;
+}
+
+/* ================= Vault folder (Chrome / Edge desktop) ================= */
+// Like an Obsidian vault: one folder per database, one file per page, plus _braindead.json for
+// databases, views and settings. Put the folder in Google Drive / Dropbox / OneDrive to back it up
+// and share it between computers. localStorage stays the working copy; the vault mirrors it.
+const canVault = 'showDirectoryPicker' in window;
+const META_FILE = '_braindead.json';
+const vault = { dir: null, state: 'off', busy: false, files: {}, folders: {}, metaText: '', metaMtime: 0, lastSync: 0, pushT: null };
+// files: pageId -> { path, text, mtime, updated } as last written or read.
+
 function idb(mode, fn) {
   return new Promise((resolve, reject) => {
     const r = indexedDB.open('braindead', 1);
@@ -1867,119 +2161,291 @@ function idb(mode, fn) {
 const idbGet = k => idb('readonly', s => s.get(k));
 const idbSet = (k, v) => idb('readwrite', s => s.put(v, k));
 const idbDel = k => idb('readwrite', s => s.delete(k));
+const saveVaultState = () => idbSet('vaultState', { files: vault.files, folders: vault.folders, metaText: vault.metaText, metaMtime: vault.metaMtime, lastSync: vault.lastSync }).catch(() => {});
 
-async function initSync() {
-  if (!canFile) return;
-  try { sync.handle = await idbGet('syncFile'); } catch (e) { return; }
-  if (!sync.handle) return;
-  sync.state = (await sync.handle.queryPermission({ mode: 'readwrite' })) === 'granted' ? 'ok' : 'reconnect';
-  if (sync.state === 'ok') await pullFile();
-  renderSidebar();
+const safeName = s => String(s || '').replace(/[\\/:*?"<>|#\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^\.+/, '').slice(0, 80) || 'Untitled';
+const pageExt = () => (S.vaultFormat === 'md' ? '.md' : '.md.html');
+function vaultLayout() {
+  const folders = {}, files = {}, used = new Set([META_FILE.toLowerCase()]);
+  for (const db of S.dbs) {
+    const base = safeName(db.name);
+    let name = base;
+    for (let i = 2; used.has(name.toLowerCase()); i++) name = `${base} (${i})`;
+    used.add(name.toLowerCase());
+    folders[db.id] = name;
+  }
+  const taken = {};
+  for (const pg of [...S.pages].sort((a, b) => a.created - b.created || (a.id < b.id ? -1 : 1))) {
+    const folder = folders[pg.db];
+    if (!folder) continue;
+    const set = taken[folder] ||= new Set();
+    const base = safeName(pg.title);
+    let name = base;
+    for (let i = 2; set.has(name.toLowerCase()); i++) name = `${base} (${i})`;
+    set.add(name.toLowerCase());
+    files[pg.id] = `${folder}/${name}${pageExt()}`;
+  }
+  return { folders, files };
 }
-async function readFile() {
-  const text = await (await sync.handle.getFile()).text();
+const metaText = () => JSON.stringify({
+  app: 'braindead', version: 1, name: S.name, vaultFormat: S.vaultFormat || 'mdhtml',
+  dbs: S.dbs.map(db => ({ ...db, folder: vault.folders[db.id] })), appData: S.appData || {},
+}, null, 2);
+
+async function dirAt(parts, create) {
+  let d = vault.dir;
+  for (const part of parts) d = await d.getDirectoryHandle(part, { create });
+  return d;
+}
+async function writeText(path, text) {
+  const parts = path.split('/'), name = parts.pop();
+  const fh = await (await dirAt(parts, true)).getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(text);
+  await w.close();
+  return (await fh.getFile()).lastModified;
+}
+async function readText(path) {
+  const parts = path.split('/'), name = parts.pop();
   try {
-    const d = JSON.parse(text);
-    return d && Array.isArray(d.dbs) && Array.isArray(d.pages) ? d : null;
-  } catch (e) { return null; } // empty, or half-written by the cloud client
-}
-async function pullFile() {
-  if (sync.state !== 'ok') return;
-  try {
-    const d = await readFile();
-    if (!d || (d.savedAt || 0) <= (S.savedAt || 0)) return;
-    S = migrate(d);
-    localStorage.setItem(KEY, JSON.stringify(S));
-    parseHash(); render(); notifyApps();
-    toast('Loaded the latest data from ' + sync.handle.name);
-  } catch (e) { syncError(e); }
-}
-function schedulePush() {
-  if (sync.state !== 'ok') return;
-  clearTimeout(sync.pushT);
-  sync.pushT = setTimeout(pushFile, 800);
-}
-async function pushFile() {
-  if (sync.state !== 'ok') return;
-  try {
-    const d = await readFile();
-    if (d && (d.savedAt || 0) > (S.savedAt || 0)) return pullFile(); // another computer saved more recently
-    const w = await sync.handle.createWritable();
-    await w.write(JSON.stringify(S));
-    await w.close();
-  } catch (e) { syncError(e); }
-}
-function syncError(e) {
-  sync.state = e?.name === 'NotAllowedError' ? 'reconnect' : 'error';
-  renderSidebar();
-}
-const FILE_TYPES = [{ description: 'Braindead data', accept: { 'application/json': ['.json'] } }];
-async function connectFile(create) {
-  try {
-    const handle = create
-      ? await showSaveFilePicker({ suggestedName: 'braindead.json', types: FILE_TYPES })
-      : (await showOpenFilePicker({ types: FILE_TYPES }))[0];
-    if ((await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') return toast('Permission refused by the browser.');
-    sync.handle = handle;
-    sync.state = 'ok';
-    await idbSet('syncFile', handle);
-    const d = create ? null : await readFile();
-    if (d && confirm(`Load the data from “${handle.name}”?\n\nOK: replace what is in this browser with the file.\nCancel: keep this browser's data and overwrite the file.`)) {
-      S = migrate(d);
-      localStorage.setItem(KEY, JSON.stringify(S));
-      parseHash(); render();
-    } else {
-      S.savedAt = Date.now();
-      const w = await handle.createWritable();
-      await w.write(JSON.stringify(S));
-      await w.close();
-    }
-    closeModal(); renderSidebar();
-    toast(`Auto-saving to ${handle.name} ✓`);
+    const f = await (await (await dirAt(parts, false)).getFileHandle(name)).getFile();
+    return { text: await f.text(), mtime: f.lastModified };
   } catch (e) {
-    if (e.name !== 'AbortError') toast('Could not use this file: ' + e.message);
+    if (e.name === 'NotFoundError' || e.name === 'TypeError') return null;
+    throw e;
   }
 }
-async function reconnectFile() {
-  try {
-    if ((await sync.handle.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
-    sync.state = 'ok';
-    await pullFile();
-    schedulePush();
-    renderSidebar();
-    toast('Sync file reconnected ✓');
-  } catch (e) { syncError(e); }
+async function removePath(path) {
+  const parts = path.split('/'), name = parts.pop();
+  try { await (await dirAt(parts, false)).removeEntry(name, { recursive: true }); }
+  catch (e) { if (e.name !== 'NotFoundError') throw e; }
 }
-async function disconnectFile() {
-  sync.handle = null;
-  sync.state = 'off';
-  await idbDel('syncFile').catch(() => {});
+
+function applyMeta(m) {
+  S.name = m.name || S.name;
+  S.vaultFormat = m.vaultFormat || 'mdhtml';
+  S.appData = m.appData || {};
+  S.dbs = m.dbs.map(({ folder, ...db }) => db);
+  vault.folders = Object.fromEntries(m.dbs.filter(d => d.folder).map(d => [d.id, d.folder]));
+  S.pages = S.pages.filter(p => dbById(p.db));
+  migrate(S);
+}
+// Reads what changed in the folder since the last sync. On a conflict, the most recent edit wins.
+async function vaultPull() {
+  let changed = false;
+  const meta = await readText(META_FILE);
+  if (meta && meta.text !== vault.metaText && meta.mtime > vault.metaMtime) {
+    try {
+      const m = JSON.parse(meta.text);
+      if (m && Array.isArray(m.dbs)) { applyMeta(m); changed = true; }
+    } catch (e) { /* half-written by the cloud client: try again later */ }
+    vault.metaText = meta.text;
+    vault.metaMtime = meta.mtime;
+  }
+  const byPath = Object.fromEntries(Object.entries(vault.files).map(([id, f]) => [f.path.toLowerCase(), id]));
+  const seen = new Set(), scanned = new Set(), pending = [];
+  for (const db of S.dbs) {
+    const folder = vault.folders[db.id];
+    if (!folder) continue;
+    let dir;
+    try { dir = await vault.dir.getDirectoryHandle(folder); } catch (e) { continue; }
+    scanned.add(folder);
+    for await (const [name, handle] of dir.entries()) {
+      if (handle.kind !== 'file' || !/\.md(\.html)?$/i.test(name)) continue;
+      const path = `${folder}/${name}`;
+      const knownId = byPath[path.toLowerCase()];
+      const known = knownId && vault.files[knownId];
+      if (knownId) seen.add(knownId);
+      const file = await handle.getFile();
+      if (known && file.lastModified <= known.mtime) continue;
+      const text = await file.text();
+      if (known && text === known.text) { known.mtime = file.lastModified; continue; }
+      const parsed = fileToPage(text, db);
+      let pg = pageById(parsed.id) || (known && pageById(knownId));
+      const edited = parsed.updated || file.lastModified;
+      const prev = pg && vault.files[pg.id];
+      if (pg && prev && pg.updated !== prev.updated && pg.updated > edited) { seen.add(pg.id); continue; } // our unsynced edit is newer
+      if (!pg) {
+        pg = newPage(db);
+        if (parsed.id && !pageById(parsed.id)) pg.id = parsed.id;
+        S.pages.push(pg);
+      }
+      Object.assign(pg, { db: db.id, title: parsed.title, icon: parsed.icon, props: parsed.props, content: parsed.content, updated: edited });
+      if (parsed.created) pg.created = parsed.created;
+      if (parsed.order != null) pg.order = parsed.order;
+      for (const [p, titles] of parsed.pending) pending.push([pg, p, titles]);
+      if (knownId && knownId !== pg.id) delete vault.files[knownId];
+      vault.files[pg.id] = { path, text, mtime: file.lastModified, updated: pg.updated };
+      seen.add(pg.id);
+      changed = true;
+    }
+  }
+  for (const [pg, p, titles] of pending) {
+    const target = dbById(p.target);
+    const ids = target ? titles.map(t => pagesOf(target).find(x => norm(x.title) === norm(t))?.id).filter(Boolean) : [];
+    if (ids.length) pg.props[p.id] = ids; else delete pg.props[p.id];
+  }
+  // Files deleted from the folder (by hand, or on another computer).
+  for (const [id, f] of Object.entries(vault.files)) {
+    if (seen.has(id) || !scanned.has(f.path.split('/')[0])) continue;
+    const pg = pageById(id);
+    if (pg && pg.updated === f.updated) { S.pages.splice(S.pages.indexOf(pg), 1); changed = true; }
+    delete vault.files[id];
+  }
+  return changed;
+}
+// Writes what changed in Braindead since the last sync.
+async function vaultPush() {
+  const layout = vaultLayout();
+  const oldFolders = Object.values(vault.folders);
+  vault.folders = layout.folders;
+  const meta = metaText();
+  if (meta !== vault.metaText) { vault.metaMtime = await writeText(META_FILE, meta); vault.metaText = meta; }
+  const format = S.vaultFormat || 'mdhtml';
+  const writes = [];
+  for (const pg of S.pages) {
+    const db = dbById(pg.db), path = layout.files[pg.id];
+    if (!db || !path) continue;
+    const text = pageToFile(pg, db, format), known = vault.files[pg.id];
+    if (known && known.path === path && known.text === text) continue;
+    writes.push([pg, path, text, known]);
+  }
+  // Remove moved and deleted files first, so a rename never overwrites another page's new file.
+  for (const [, path, , known] of writes) if (known && known.path !== path) await removePath(known.path);
+  for (const [id, f] of Object.entries(vault.files)) if (!pageById(id)) { await removePath(f.path); delete vault.files[id]; }
+  for (const [pg, path, text] of writes) vault.files[pg.id] = { path, text, mtime: await writeText(path, text), updated: pg.updated };
+  // Folders of renamed or deleted databases: remove them once empty.
+  for (const name of oldFolders) {
+    if (Object.values(layout.folders).includes(name)) continue;
+    try {
+      const dir = await vault.dir.getDirectoryHandle(name);
+      let empty = true;
+      for await (const entry of dir.keys()) { empty = false; void entry; break; }
+      if (empty) await vault.dir.removeEntry(name);
+    } catch (e) { /* already gone */ }
+  }
+}
+function persistLocal() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* quota: the vault still has the data */ }
+}
+async function vaultSync({ pull = true, push = true, quiet = false } = {}) {
+  if (vault.state !== 'ok') return;
+  if (vault.busy) { if (push) schedulePush(); return; }
+  vault.busy = true;
+  try {
+    const changed = pull && await vaultPull();
+    if (push) await vaultPush();
+    vault.lastSync = Date.now();
+    await saveVaultState();
+    if (changed) {
+      persistLocal();
+      parseHash(); render(); notifyApps();
+      if (!quiet) toast('Updated from your vault folder');
+    }
+  } catch (e) {
+    vault.state = e?.name === 'NotAllowedError' || e?.name === 'SecurityError' ? 'reconnect' : 'error';
+    vault.error = e?.message || String(e);
+    renderSidebar();
+  } finally { vault.busy = false; }
+}
+function schedulePush() {
+  if (vault.state !== 'ok') return;
+  clearTimeout(vault.pushT);
+  vault.pushT = setTimeout(() => vaultSync(), 1000);
+}
+async function initVault() {
+  if (!canVault) return;
+  try {
+    vault.dir = await idbGet('vaultDir');
+    if (!vault.dir) return;
+    Object.assign(vault, await idbGet('vaultState') || {});
+    vault.state = (await vault.dir.queryPermission({ mode: 'readwrite' })) === 'granted' ? 'ok' : 'reconnect';
+  } catch (e) { return; }
+  renderSidebar();
+  vaultSync();
+}
+async function connectVault() {
+  try {
+    const dir = await showDirectoryPicker({ id: 'braindead-vault', mode: 'readwrite' });
+    if ((await dir.requestPermission({ mode: 'readwrite' })) !== 'granted') return toast('Permission refused by the browser.');
+    Object.assign(vault, { dir, state: 'ok', files: {}, folders: {}, metaText: '', metaMtime: 0, error: null });
+    await idbSet('vaultDir', dir);
+    const meta = await readText(META_FILE);
+    if (meta && confirm(`“${dir.name}” already contains a Braindead vault.\n\nOK: open it — this browser will show the vault's pages (choose this on your second computer).\nCancel: merge — keep this browser's pages and add them to the vault.`)) {
+      S.pages = [];
+      S.dbs = [];
+    } else if (meta) {
+      vault.metaText = meta.text; // merge: keep our databases; pages in same-named folders get imported
+      vault.metaMtime = meta.mtime;
+    }
+    S.vaultFormat ||= 'mdhtml';
+    closeModal();
+    await vaultSync({ quiet: true });
+    await vaultSync({ quiet: true }); // second pass imports pages found in the folders just mapped
+    if (vault.state === 'ok') {
+      persistLocal();
+      parseHash(); render();
+      toast(`Vault connected: ${dir.name} ✓`);
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('Could not use this folder: ' + e.message);
+  }
+}
+async function reconnectVault() {
+  try {
+    if ((await vault.dir.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
+    vault.state = 'ok';
+    renderSidebar();
+    await vaultSync();
+    toast('Vault reconnected ✓');
+  } catch (e) { toast('Could not reconnect: ' + e.message); }
+}
+async function disconnectVault() {
+  Object.assign(vault, { dir: null, state: 'off', files: {}, folders: {}, metaText: '', metaMtime: 0 });
+  await idbDel('vaultDir').catch(() => {});
+  await idbDel('vaultState').catch(() => {});
   closeModal(); renderSidebar();
-  toast('Sync file disconnected — your data stays in this browser.');
+  toast('Vault disconnected — your data stays in this browser, and the files stay in the folder.');
 }
 function syncButton() {
-  if (sync.state === 'reconnect') return h('button', { class: 'sb-item warn', onclick: reconnectFile }, h('span', { class: 'sb-ico' }, '⚠'), 'Reconnect sync file');
-  if (sync.state === 'error') return h('button', { class: 'sb-item warn', onclick: openSyncModal }, h('span', { class: 'sb-ico' }, '⚠'), 'Sync file error');
-  if (sync.state === 'ok') return h('button', { class: 'sb-item', onclick: openSyncModal, title: 'Auto-saving to this file' }, h('span', { class: 'sb-ico' }, '☁'), h('span', { class: 'sb-txt' }, 'Synced: ' + sync.handle.name));
-  return h('button', { class: 'sb-item', onclick: openSyncModal }, h('span', { class: 'sb-ico' }, '☁'), 'Save to a file (Drive…)');
+  if (vault.state === 'reconnect') return h('button', { class: 'sb-item warn', onclick: reconnectVault }, h('span', { class: 'sb-ico' }, '⚠'), 'Reconnect vault folder');
+  if (vault.state === 'error') return h('button', { class: 'sb-item warn', onclick: openVaultModal }, h('span', { class: 'sb-ico' }, '⚠'), 'Vault sync error');
+  if (vault.state === 'ok') return h('button', { class: 'sb-item', onclick: openVaultModal, title: 'Pages are saved as files in this folder' }, h('span', { class: 'sb-ico' }, '📁'), h('span', { class: 'sb-txt' }, 'Vault: ' + vault.dir.name));
+  return h('button', { class: 'sb-item', onclick: openVaultModal }, h('span', { class: 'sb-ico' }, '📁'), 'Save to a folder (Drive…)');
 }
-function openSyncModal() {
-  modal('Save to a file', [
-    h('p', { class: 'sync-p' }, 'Braindead always saves automatically in this browser. You can also auto-save to a file on your computer.'),
-    h('p', { class: 'sync-p' }, 'Put that file in your ', h('b', null, 'Google Drive, Dropbox or OneDrive'), ' folder: it is then backed up online and shared between your computers. On your other computer, choose “Use an existing file” and pick the same one.'),
-    !canFile
-      ? h('div', { class: 'tip' }, 'This browser can’t write files. It works in Chrome and Edge on a computer — elsewhere, use “Back up (.json)”.')
+function openVaultModal() {
+  const fmt = S.vaultFormat || 'mdhtml';
+  const setFormat = f => { S.vaultFormat = f; save(); openVaultModal(); };
+  modal('Vault folder', [
+    h('p', { class: 'sync-p' }, 'Braindead can keep every page as a readable file in a folder on your computer — like an Obsidian vault. One sub-folder per database, one file per page, and edits in the files come back into Braindead.'),
+    h('p', { class: 'sync-p' }, 'Choose a folder inside ', h('b', null, 'Google Drive, Dropbox or OneDrive'), ' to back it up online and share it between your computers. On the other computer, choose the same folder.'),
+    !canVault
+      ? h('div', { class: 'tip' }, 'This browser can’t open folders. It works in Chrome and Edge on a computer — elsewhere, use “Back up (.json)”.')
       : [
-        sync.handle ? h('div', { class: 'tip' }, sync.state === 'ok' ? '✓ Connected to ' : '⚠ Permission needed for ', h('b', null, sync.handle.name),
-          sync.state !== 'ok' ? h('button', { class: 'btn', onclick: reconnectFile }, 'Reconnect') : null) : null,
+        vault.dir ? h('div', { class: 'tip' }, vault.state === 'ok' ? '✓ Connected to ' : '⚠ Not syncing: ', h('b', null, vault.dir.name),
+          vault.state === 'ok' && vault.lastSync ? h('span', { class: 'muted' }, ' · synced ' + new Date(vault.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })) : null,
+          vault.state === 'error' ? h('span', { class: 'muted' }, ' — ' + (vault.error || 'unknown error')) : null,
+          vault.state === 'reconnect' ? h('button', { class: 'btn', onclick: reconnectVault }, 'Reconnect') : null,
+          vault.state === 'error' ? h('button', { class: 'btn', onclick: () => { vault.state = 'ok'; vaultSync().then(openVaultModal); } }, 'Retry') : null) : null,
+        h('div', { class: 'pop-label', style: { marginTop: '12px' } }, 'PAGE FILES'),
+        h('label', { class: 'fmt' }, h('input', { type: 'radio', name: 'fmt', checked: fmt === 'mdhtml', onchange: () => setFormat('mdhtml') }),
+          h('span', null, h('b', null, '.md.html'), ' — readable text on top; opens as a formatted page in any browser.')),
+        h('label', { class: 'fmt' }, h('input', { type: 'radio', name: 'fmt', checked: fmt === 'md', onchange: () => setFormat('md') }),
+          h('span', null, h('b', null, '.md'), ' — plain Markdown; the folder also opens as an Obsidian vault.')),
         h('div', { class: 'modal-foot', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } },
-          h('button', { class: 'btn primary', onclick: () => connectFile(true) }, 'Create a new file'),
-          h('button', { class: 'btn', onclick: () => connectFile(false) }, 'Use an existing file'),
-          sync.handle ? h('button', { class: 'btn danger', onclick: disconnectFile }, 'Disconnect') : null),
+          h('button', { class: 'btn primary', onclick: connectVault }, vault.dir ? 'Choose another folder' : 'Choose a folder'),
+          vault.state === 'ok' ? h('button', { class: 'btn', onclick: () => vaultSync().then(openVaultModal) }, 'Sync now') : null,
+          vault.dir ? h('button', { class: 'btn danger', onclick: disconnectVault }, 'Disconnect') : null),
       ],
   ]);
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) pullFile(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) vaultSync({ push: false }); });
+// Pick up edits made on another computer or in the files, unless the user is typing.
+setInterval(() => {
+  const a = document.activeElement;
+  if (document.hidden || (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))) return;
+  vaultSync({ push: false });
+}, 20000);
 
 /* ================= Keyboard & startup ================= */
 document.addEventListener('keydown', e => {
@@ -2004,7 +2470,7 @@ render();
 saveNow();
 checkNotifs();
 loadApps();
-initSync();
+initVault();
 // Ask the browser never to evict our data to free up space.
 navigator.storage?.persist?.().catch(() => {});
 setInterval(() => { checkNotifs(); updateTitle(); }, 15 * 60 * 1000);

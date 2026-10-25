@@ -594,3 +594,6 @@ select.in { padding-right: 4px; }
 .sb-item.warn { color: var(--warn); }
 .sync-p { margin: 0 0 10px; color: var(--muted); }
 .sync-p b { color: var(--text); }
+.fmt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 2px; cursor: pointer; color: var(--muted); font-size: 13.5px; }
+.fmt b { color: var(--text); }
+.fmt input { margin-top: 4px; accent-color: var(--accent); }

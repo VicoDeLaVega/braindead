@@ -22,7 +22,7 @@ Built to keep track of tasks, projects, groceries, paperwork and recurring bills
 - **Reminders**: browser notifications (while the app is open) and **.ics export** to Google / Apple / Outlook calendar, with alerts the day before and on the day.
 - **9 themes**: Snow, Sand, Mint, Lavender, Peach, Sky, Paper, Night, Ink.
 - **Apps**: extra HTML pages (budget tracker, habit tracker…) that live in `apps/`, show up in the sidebar and can read and write your databases. Ask Claude Code to build one — see below.
-- **Auto-save to a file** (Chrome / Edge desktop): put it in your Google Drive, Dropbox or OneDrive folder to back up online and share between computers.
+- **Vault folder** (Chrome / Edge desktop), like Obsidian: every page is also saved as a readable file — one folder per database, one file per page. Put the folder in Google Drive, Dropbox or OneDrive to back it up online and share it between computers. Edits made in the files come back into Braindead.
 - Global search with `Ctrl+K`, mobile layout, installable as an app (PWA), works offline.
 
 Starter templates: Tasks, Projects, Groceries, Paperwork, Bills & reminders (with sample items you can delete).
@@ -45,7 +45,42 @@ Everything is saved **automatically in your browser** (localStorage) after every
 
 - Each browser / device has its own data. Clearing your browser's site data erases it.
 - On iPhone, add Braindead to your home screen (Share → Add to Home Screen) so Safari keeps the data.
-- **Save to a file (Drive…)** (Chrome / Edge on a computer): Braindead also auto-saves to a file you choose. Put it in your Google Drive, Dropbox or OneDrive folder and it is backed up online; on another computer, pick **Use an existing file** to share the same data. The newest copy always wins.
+- **Save to a folder (Drive…)** (Chrome / Edge on a computer): Braindead mirrors everything into a folder you choose — your *vault*. Choose a folder inside Google Drive, Dropbox or OneDrive and it is backed up online; on another computer, choose the same folder. On a conflict, the most recent edit wins.
+### Vault format
+
+```
+Braindead/
+  _braindead.json              ← databases, views, settings
+  Tasks/
+    Call the plumber.md.html   ← one file per page
+  Bills & reminders/
+    Rent.md.html
+```
+
+Each page is Markdown with its properties on top:
+
+```markdown
+---
+id: 182jp3p8l36
+Status: In progress
+Priority: High
+Due date: 2026-10-26
+Category: [Home]
+---
+
+# Call the plumber
+
+Ask for a quote for:
+
+- [x] Shower
+- [ ] Sink
+```
+
+- **`.md.html`** (default): the text above is followed by a small built-in viewer. Open the file in a text editor and you read the text; double-click it and your browser shows a formatted page — even offline, even without Braindead.
+- **`.md`**: plain Markdown files, so the folder also opens as an [Obsidian](https://obsidian.md) vault.
+
+You can edit the files by hand: change a property, tick a checkbox, add a new property line or even create a new file — Braindead picks it up.
+
 - **Back up (.json)** downloads a snapshot at any time; **Restore a backup** loads one (or moves your data to a phone).
 
 ## Run locally
