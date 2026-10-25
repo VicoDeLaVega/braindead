@@ -24,7 +24,7 @@ Built to keep track of tasks, projects, groceries, paperwork and recurring bills
 - **Apps**: extra HTML pages (budget tracker, habit tracker…) that live in `apps/`, show up in the sidebar and can read and write your databases. Ask Claude Code to build one — see below.
 - **Vault folder** (Chrome / Edge desktop), like Obsidian: every page is also saved as a readable file — one folder per database, one file per page. Put the folder in Google Drive, Dropbox or OneDrive to back it up online and share it between computers. Edits made in the files come back into Braindead.
 - **Back up to GitHub**: sync everything into a private GitHub repository — every sync is a commit, so you keep the full history of every page, and it works on phones too.
-- **AI agents can write into it**: vaults, zips and data repos include an `AGENTS.md` ([docs/agent-guide.md](docs/agent-guide.md)) explaining the file format, so Claude Code or any agent can add or edit pages — “add these 5 groceries”, “create a task for each email I need to answer”.
+- **AI agents can write into it**: vaults, zips and data repos include an `AGENTS.md` ([guide](plugins/braindead/skills/braindead/agent-guide.md)) explaining the file format, so Claude Code or any agent can add or edit pages — “add these 5 groceries”, “create a task for each email I need to answer”.
 - Global search with `Ctrl+K`, mobile layout, installable as an app (PWA), works offline.
 
 Starter templates: Tasks, Projects, Groceries, Paperwork, Bills & reminders (with sample items you can delete).
@@ -40,6 +40,28 @@ Then, to add your own tools, clone your repo, open it in [Claude Code](https://c
 > Make me a habit tracker app for Braindead.
 
 Claude reads [`CLAUDE.md`](CLAUDE.md), creates the app in `apps/`, registers it and pushes. It appears under **Apps** in the sidebar, matches your theme, and stores its data in your Braindead databases.
+
+## Use it with Claude Code
+
+Let Claude read and write your pages from any Claude Code session — no server, no git.
+
+1. In Braindead (Chrome or Edge on a computer), click **Save to a folder (Drive…)** and pick a folder — ideally in Google Drive, Dropbox or OneDrive.
+2. In Claude Code, install the plugin:
+
+   ```
+   /plugin marketplace add VicoDeLaVega/braindead
+   /plugin install braindead@braindead
+   ```
+
+3. Run `/braindead:setup` once: Claude finds your vault folder, checks the link with the app and remembers it.
+
+Then just ask, in any session:
+
+> Add eggs, butter and flour to my groceries
+> Create a task to call Alex on Friday, high priority
+> What do I have to pay this month?
+
+Claude writes the files in your vault folder and the pages show up in Braindead within a few seconds (keep the tab open). Other AI agents can do the same by following [`AGENTS.md`](plugins/braindead/skills/braindead/agent-guide.md), which Braindead also drops into your vault.
 
 ## Your data
 

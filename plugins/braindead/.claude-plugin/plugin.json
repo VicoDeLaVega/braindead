@@ -1,0 +1,13 @@
+{
+  "name": "braindead",
+  "displayName": "Braindead",
+  "version": "1.0.0",
+  "description": "Let Claude read and write your Braindead pages: tasks, groceries, projects, paperwork, bills and notes",
+  "author": {
+    "name": "Victor Ceitelis"
+  },
+  "homepage": "https://vicodelavega.github.io/braindead/",
+  "repository": "https://github.com/VicoDeLaVega/braindead",
+  "license": "MIT",
+  "keywords": ["notes", "tasks", "todo", "notion", "obsidian", "markdown"]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "braindead",
+  "description": "Claude Code plugin for Braindead, the local-first Notion-like workspace",
+  "owner": {
+    "name": "Victor Ceitelis"
+  },
+  "plugins": [
+    {
+      "name": "braindead",
+      "source": "./plugins/braindead",
+      "description": "Let Claude read and write your Braindead pages: tasks, groceries, projects, paperwork, bills and notes"
+    }
+  ]
+}

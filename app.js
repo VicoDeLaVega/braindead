@@ -2312,7 +2312,7 @@ const isOurDoc = text => text.startsWith('# Writing into Braindead') || text.sta
 async function agentDocs() {
   if (!agentDocsCache) {
     try {
-      const r = await fetch('docs/agent-guide.md', { cache: 'no-cache' });
+      const r = await fetch('plugins/braindead/skills/braindead/agent-guide.md', { cache: 'no-cache' });
       agentDocsCache = r.ok ? [['AGENTS.md', await r.text()], ['CLAUDE.md', CLAUDE_STUB]] : [];
     } catch (e) { agentDocsCache = []; }
   }
