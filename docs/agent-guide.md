@@ -50,7 +50,7 @@ Call before noon. Ask about:
 2. Then the title on a `# ` line.
 3. Then the notes in Markdown: paragraphs, `## Heading` / `### Sub-heading` / `#### Small heading`, `- bullets`, `1. numbered`, `- [ ] task` / `- [x] done task`, `> quote`, `**bold**`, `*italic*`, `~~strike~~`, `[link](https://…)`, `---`.
 
-In a `.md.html` file, everything after the line starting with `<!-- ─── Braindead viewer` is display code: **never edit or copy it**. For a new page, write only the text part — Braindead adds the viewer itself.
+In a `.md.html` file, everything after the line starting with `<!-- ─── Braindead viewer` is display code: **never edit it, and never copy it from another file**. For a new page, write only the text part — Braindead adds the viewer itself on its next sync.
 
 ### Property values
 
@@ -126,20 +126,23 @@ Link: https://ants.gouv.fr
 - [ ] Find the old passport
 ```
 
-## Sending your changes
+## Sending your changes — first check where you are
 
-**GitHub repository** — `git pull` first, edit, then commit and push:
+**Is there a `.git` folder here?**
 
-```bash
-git pull --rebase
-git add -A
-git commit -m "Add 3 groceries and the gym bill"
-git push
-```
+- **No → this is the vault folder Braindead watches.** Just save the files: Braindead re-reads the folder every few seconds while it is open, and the user sees your pages right away. Do not run git here. This is the recommended setup.
+- **Yes → this is a git clone of the data repository.** Braindead does **not** see this folder: your changes only reach Braindead once they are on GitHub. You must commit and push yourself — never leave changes uncommitted, and never assume Braindead will commit them:
 
-Braindead picks the commit up on its next sync. If the app pushed in between, pull again and retry.
+  ```bash
+  git pull --rebase
+  git add -A
+  git commit -m "Add 3 groceries and the gym bill"
+  git push
+  ```
 
-**Synced folder** — just save the files; Braindead re-reads the folder every 20 seconds while it is open.
+  Then tell the user to click **Sync now** in Braindead (it also syncs on open and every 10 minutes). If the push is rejected because Braindead pushed in between, pull again and retry.
+
+When you are done, tell the user which pages you added or changed, and in which database.
 
 ## Good to know
 

@@ -2304,9 +2304,11 @@ const metaText = (folders = vault.folders) => JSON.stringify({
   app: 'braindead', version: 1, name: S.name, vaultFormat: S.vaultFormat || 'mdhtml',
   dbs: S.dbs.map(db => ({ ...db, folder: folders[db.id] })), appData: S.appData || {},
 }, null, 2);
-// Guide for AI agents, dropped at the root of vaults, zips and data repos (never overwritten).
+// Guide for AI agents, dropped at the root of vaults, zips and data repos. Kept up to date, but a
+// file the user wrote themselves (not starting with our heading) is never overwritten.
 const CLAUDE_STUB = '# Braindead vault\n\nThis folder holds Braindead data. Before adding or editing pages, follow AGENTS.md.\n\n@AGENTS.md\n';
 let agentDocsCache;
+const isOurDoc = text => text.startsWith('# Writing into Braindead') || text.startsWith('# Braindead vault');
 async function agentDocs() {
   if (!agentDocsCache) {
     try {
@@ -2441,7 +2443,10 @@ async function vaultPush() {
   const meta = metaText();
   if (meta !== vault.metaText) { vault.metaMtime = await writeText(META_FILE, meta); vault.metaText = meta; }
   if (!vault.docsChecked) {
-    for (const [path, text] of await agentDocs()) if (!(await readText(path))) await writeText(path, text);
+    for (const [path, text] of await agentDocs()) {
+      const cur = await readText(path);
+      if (!cur || (cur.text !== text && isOurDoc(cur.text))) await writeText(path, text);
+    }
     vault.docsChecked = true;
   }
   const format = S.vaultFormat || 'mdhtml';
@@ -2588,7 +2593,7 @@ setInterval(() => {
   const a = document.activeElement;
   if (document.hidden || (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))) return;
   vaultSync({ push: false });
-}, 20000);
+}, 5000);
 
 /* ================= GitHub backup (private repo, full history) ================= */
 // Syncs the same vault files (_braindead.json + one file per page) into a private repository
@@ -2643,7 +2648,7 @@ async function ghHead() {
 async function ghTree(head) {
   const commit = await ghApi('GET', `/repos/${gh.repo}/git/commits/${head}`);
   const tree = await ghApi('GET', `/repos/${gh.repo}/git/trees/${commit.tree.sha}?recursive=1`);
-  return { treeSha: commit.tree.sha, all: new Set(tree.tree.map(x => x.path)), files: Object.fromEntries(tree.tree.filter(x => x.type === 'blob' && isVaultPath(x.path)).map(x => [x.path, x.sha])) };
+  return { treeSha: commit.tree.sha, all: new Map(tree.tree.map(x => [x.path, x.sha])), files: Object.fromEntries(tree.tree.filter(x => x.type === 'blob' && isVaultPath(x.path)).map(x => [x.path, x.sha])) };
 }
 // Applies what changed on GitHub since this device's last sync. The most recent edit wins.
 async function ghPull(remote) {
@@ -2713,7 +2718,12 @@ async function ghPush(head, remote) {
     if (!next[path]) { entries.push({ path, mode: '100644', type: 'blob', sha: null }); removed++; }
   }
   for (const [path, text] of await agentDocs()) {
-    if (!remote.all.has(path)) entries.push({ path, mode: '100644', type: 'blob', content: text });
+    const sha = remote.all.get(path);
+    if (sha === await blobSha(text)) continue;
+    // Missing, or an older copy of our own guide: (re)write it. A file the user wrote is left alone.
+    if (!sha || isOurDoc(b64ToText((await ghApi('GET', `/repos/${gh.repo}/git/blobs/${sha}`)).content))) {
+      entries.push({ path, mode: '100644', type: 'blob', content: text });
+    }
   }
   if (entries.length) {
     const tree = await ghApi('POST', `/repos/${gh.repo}/git/trees`, { base_tree: remote.treeSha, tree: entries });
