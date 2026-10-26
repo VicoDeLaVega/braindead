@@ -1,6 +1,6 @@
 // Network-first service worker: works offline, but updates as soon as it's online.
-const CACHE = 'braindead-v3';
-const FILES = ['./', './index.html', './styles.css', './app.js', './icon.svg', './manifest.webmanifest'];
+const CACHE = 'braindead-v4';
+const FILES = ['./', './index.html', './config.js', './styles.css', './app.js', './icon.svg', './manifest.webmanifest'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));

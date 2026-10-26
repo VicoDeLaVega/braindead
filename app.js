@@ -2636,7 +2636,7 @@ setInterval(() => {
 // through the GitHub or GitLab REST API — every sync is one commit, so each page keeps its history.
 // The token is stored only in this browser, never in the data, the vault or the zip.
 const GH_KEY = 'braindead.github';
-const gh = { provider: 'github', host: '', repo: '', token: '', branch: '', auto: true, head: '', files: {}, pages: {}, lastSync: 0, syncedSavedAt: 0, state: 'off', error: '', busy: false, pick: 'github' };
+const gh = { provider: 'github', host: '', repo: '', token: '', tokenExp: 0, driveRoot: '', branch: '', auto: true, head: '', files: {}, pages: {}, lastSync: 0, syncedSavedAt: 0, state: 'off', error: '', busy: false, pick: 'github' };
 try { Object.assign(gh, JSON.parse(localStorage.getItem(GH_KEY)) || {}); } catch (e) { /* no config yet */ }
 gh.state = gh.repo && gh.token ? 'ok' : 'off';
 gh.busy = false;
@@ -2752,6 +2752,194 @@ const PROVIDERS = {
 };
 const provider = () => PROVIDERS[gh.provider] || PROVIDERS.github;
 
+// --- Google Drive: "Sign in with Google", files in a Braindead folder of the user's Drive ---
+// Uses the drive.file scope: Braindead only sees the files it created. Drive has no commits, so a
+// fingerprint of the file list plays the role of the head; it keeps 30 days of versions per file,
+// and deleted pages go to the Drive trash.
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const FOLDER = 'application/vnd.google-apps.folder';
+function googleCfg() {
+  const g = window.BRAINDEAD_CONFIG?.google;
+  return g?.clientId && (!g.origins || g.origins.includes(location.origin)) ? g : null;
+}
+let gsiLoading;
+function loadGsi() {
+  return gsiLoading ||= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = () => { gsiLoading = null; reject(new Error('could not load Google sign-in')); };
+    document.head.append(s);
+  });
+}
+// interactive: a click opened this, so Google may show its sign-in / consent window.
+async function googleToken(interactive) {
+  if (!googleCfg()) throw new Error('Google Drive is not configured for this site');
+  await loadGsi();
+  const r = await new Promise((resolve, reject) => {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: googleCfg().clientId, scope: DRIVE_SCOPE,
+      callback: resp => resp.error ? reject(new Error(resp.error_description || resp.error)) : resolve(resp),
+      error_callback: e => reject(new Error(e.type === 'popup_closed' ? 'the Google window was closed' : e.message || e.type || 'Google sign-in failed')),
+    });
+    client.requestAccessToken({ prompt: interactive ? '' : 'none' });
+  });
+  if (!google.accounts.oauth2.hasGrantedAllScopes(r, DRIVE_SCOPE)) throw new Error('Braindead needs access to the files it creates in your Drive — tick that box when Google asks');
+  gh.token = r.access_token;
+  gh.tokenExp = Date.now() + (Number(r.expires_in) - 120) * 1000;
+  ghSave();
+}
+// Google tokens last about an hour: renew it on a user click shortly before it expires.
+document.addEventListener('pointerdown', () => {
+  if (gh.provider === 'gdrive' && gh.state !== 'off' && googleCfg() && Date.now() > (gh.tokenExp || 0) - 10 * 60 * 1000) {
+    googleToken(false).then(() => { if (gh.state === 'auth') { gh.state = 'ok'; ghSync({ quiet: true }); } }).catch(() => {});
+  }
+}, true);
+function md5Hex(bytes) {
+  const S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+  const K = Array.from({ length: 64 }, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 2 ** 32) >>> 0);
+  const len = bytes.length, words = new Uint32Array((((len + 8) >>> 6) + 1) * 16);
+  for (let i = 0; i < len; i++) words[i >> 2] |= bytes[i] << ((i % 4) * 8);
+  words[len >> 2] |= 0x80 << ((len % 4) * 8);
+  words[words.length - 2] = (len * 8) >>> 0;
+  words[words.length - 1] = Math.floor(len / 0x20000000);
+  let a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+  for (let o = 0; o < words.length; o += 16) {
+    let A = a0, B = b0, C = c0, D = d0;
+    for (let i = 0; i < 64; i++) {
+      const r = i >> 4;
+      const F = r === 0 ? (B & C) | (~B & D) : r === 1 ? (D & B) | (~D & C) : r === 2 ? B ^ C ^ D : C ^ (B | ~D);
+      const g = r === 0 ? i : r === 1 ? (5 * i + 1) % 16 : r === 2 ? (3 * i + 5) % 16 : (7 * i) % 16;
+      const s = S[r * 4 + (i % 4)], f = (F + A + K[i] + words[o + g]) >>> 0;
+      A = D; D = C; C = B;
+      B = (B + ((f << s) | (f >>> (32 - s)))) >>> 0;
+    }
+    a0 = (a0 + A) >>> 0; b0 = (b0 + B) >>> 0; c0 = (c0 + C) >>> 0; d0 = (d0 + D) >>> 0;
+  }
+  return [a0, b0, c0, d0].map(x => [0, 8, 16, 24].map(sh => ((x >>> sh) & 255).toString(16).padStart(2, '0')).join('')).join('');
+}
+PROVIDERS.gdrive = {
+  name: 'Google Drive',
+  web: () => gh.driveRoot ? `https://drive.google.com/drive/folders/${gh.driveRoot}` : 'https://drive.google.com/drive/my-drive',
+  history() { return this.web(); },
+  hash: text => md5Hex(new TextEncoder().encode(text)),
+  async api(method, url, body, opts = {}) {
+    if (!gh.token || Date.now() > (gh.tokenExp || 0)) {
+      try { await googleToken(false); }
+      catch (e) { throw Object.assign(new Error('the Google sign-in has expired — click Reconnect'), { status: 401 }); }
+    }
+    const r = await fetch(url.startsWith('https:') ? url : 'https://www.googleapis.com/drive/v3' + url, {
+      method, cache: 'no-store', body: body == null ? undefined : opts.raw ? body : JSON.stringify(body),
+      headers: { Authorization: 'Bearer ' + gh.token, ...(body != null && !opts.raw ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) },
+    });
+    if (!r.ok) {
+      let msg = r.statusText;
+      try { msg = (await r.json()).error?.message || msg; } catch (e) { /* not JSON */ }
+      throw Object.assign(new Error(`Google Drive ${r.status}: ${msg}`), { status: r.status });
+    }
+    return r.status === 204 ? null : opts.text ? r.text() : r.json();
+  },
+  // Lists the app's files and maps them to vault paths under the Braindead folder (created if missing).
+  async list() {
+    const items = [];
+    let pageToken = '';
+    do {
+      const page = await this.api('GET', `/files?q=${encodeURIComponent('trashed=false')}&spaces=drive&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,parents,md5Checksum)${pageToken ? '&pageToken=' + pageToken : ''}`);
+      items.push(...page.files);
+      pageToken = page.nextPageToken || '';
+    } while (pageToken);
+    const ids = new Set(items.map(f => f.id));
+    if (!gh.driveRoot || !ids.has(gh.driveRoot)) {
+      const root = items.find(f => f.mimeType === FOLDER && f.name === 'Braindead' && !ids.has(f.parents?.[0]));
+      gh.driveRoot = root ? root.id : (await this.api('POST', '/files?fields=id', { name: 'Braindead', mimeType: FOLDER })).id;
+      ghSave();
+    }
+    const byId = new Map(items.map(f => [f.id, f]));
+    const pathOf = f => {
+      const parts = [];
+      for (let cur = f, i = 0; cur && i < 6; cur = byId.get(cur.parents?.[0]), i++) {
+        if (cur.id === gh.driveRoot) return parts.reverse().join('/');
+        parts.push(cur.name);
+      }
+      return null;
+    };
+    const files = new Map(), folders = new Map([['', gh.driveRoot]]);
+    for (const f of items) {
+      const p = pathOf(f);
+      if (!p) continue;
+      if (f.mimeType === FOLDER) folders.set(p, f.id); else files.set(p, { id: f.id, md5: f.md5Checksum || '' });
+    }
+    return (this.cache = { files, folders });
+  },
+  async head() {
+    const { files } = await this.list();
+    return blobSha([...files].map(([p, f]) => p + ':' + f.md5).sort().join('\n'));
+  },
+  async tree() { return { all: new Map([...this.cache.files].map(([p, f]) => [p, f.md5])) }; },
+  blob(md5) {
+    const f = [...this.cache.files.values()].find(x => x.md5 === md5);
+    return this.api('GET', `/files/${f.id}?alt=media`, null, { text: true });
+  },
+  async info() { return { private: true, branch: 'drive', canPush: true }; },
+  async init() { /* the Braindead folder is created by list() */ },
+  async folderId(path) {
+    const { folders } = this.cache;
+    if (folders.has(path)) return folders.get(path);
+    const i = path.lastIndexOf('/');
+    const parent = await this.folderId(i < 0 ? '' : path.slice(0, i));
+    const id = (await this.api('POST', '/files?fields=id', { name: path.slice(i + 1), mimeType: FOLDER, parents: [parent] })).id;
+    folders.set(path, id);
+    return id;
+  },
+  async commit(head, remote, changes) {
+    if (await this.head() !== head) throw conflict(); // another device saved in the meantime
+    const { files } = this.cache;
+    for (const c of changes) {
+      const f = files.get(c.path);
+      if (c.content == null) { if (f) await this.api('PATCH', `/files/${f.id}`, { trashed: true }); continue; }
+      const type = (c.path.endsWith('.html') ? 'text/html' : c.path.endsWith('.json') ? 'application/json' : 'text/markdown') + '; charset=UTF-8';
+      if (f) {
+        await this.api('PATCH', `https://www.googleapis.com/upload/drive/v3/files/${f.id}?uploadType=media`, c.content, { raw: true, headers: { 'Content-Type': type } });
+        continue;
+      }
+      const i = c.path.lastIndexOf('/');
+      const parent = await this.folderId(i < 0 ? '' : c.path.slice(0, i));
+      const b = 'braindead' + Math.random().toString(36).slice(2);
+      const meta = JSON.stringify({ name: c.path.slice(i + 1), parents: [parent], mimeType: type.split(';')[0] });
+      await this.api('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+        `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: ${type}\r\n\r\n${c.content}\r\n--${b}--`,
+        { raw: true, headers: { 'Content-Type': 'multipart/related; boundary=' + b } });
+    }
+    return this.head();
+  },
+};
+const hashOf = text => (provider().hash || blobSha)(text);
+async function driveConnect() {
+  Object.assign(gh, { provider: 'gdrive', host: '', repo: 'Braindead', token: '', tokenExp: 0, branch: 'drive', head: '', files: {}, pages: {}, lastSync: 0, state: 'ok', error: '', driveRoot: '' });
+  try {
+    await googleToken(true);
+    const head = await PROVIDERS.gdrive.head();
+    const remote = await ghTree(head);
+    if (remote.files[META_FILE]) {
+      if (confirm('Your Google Drive already contains Braindead data.\n\nOK: load it — this browser will show the data from Drive (choose this on your second device).\nCancel: merge — keep this browser\'s pages and add them to Drive.')) {
+        S.pages = [];
+        S.dbs = [];
+      } else gh.files[META_FILE] = remote.files[META_FILE]; // keep our databases
+    }
+    ghSave();
+    await ghSync();
+  } catch (e) {
+    Object.assign(gh, { state: 'off', token: '', repo: '' });
+    localStorage.removeItem(GH_KEY);
+    renderSidebar();
+    toast('Could not connect Google Drive — ' + e.message);
+  }
+}
+function driveReconnect() {
+  googleToken(true).then(() => { gh.state = 'ok'; gh.error = ''; return ghSync(); }).catch(e => toast('Google sign-in failed — ' + e.message));
+}
+
 async function ghTree(head) {
   const t = await provider().tree(head);
   t.files = Object.fromEntries([...t.all].filter(([p]) => isVaultPath(p)));
@@ -2815,7 +3003,7 @@ async function ghPush(head, remote) {
   const local = vaultFiles(), next = {}, changes = [];
   let added = 0, updated = 0, removed = 0;
   for (const f of local) {
-    const sha = await blobSha(f.text);
+    const sha = await hashOf(f.text);
     next[f.path] = sha;
     if (remote.files[f.path] === sha) continue;
     if (remote.files[f.path]) updated++; else added++;
@@ -2826,7 +3014,7 @@ async function ghPush(head, remote) {
   }
   for (const [path, text] of await agentDocs()) {
     const sha = remote.all.get(path);
-    if (sha === await blobSha(text)) continue;
+    if (sha === await hashOf(text)) continue;
     // Missing, or an older copy of our own guide: (re)write it. A file the user wrote is left alone.
     if (!sha || isOurDoc(await provider().blob(sha))) changes.push({ path, content: text });
   }
@@ -2917,7 +3105,8 @@ async function ghConnect(kind, repoInput, token) {
 }
 function ghForget(quiet) {
   const name = provider().name;
-  Object.assign(gh, { host: '', repo: '', token: '', branch: '', head: '', files: {}, pages: {}, lastSync: 0, state: 'off', error: '' });
+  if (gh.provider === 'gdrive' && gh.token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(gh.token, () => {});
+  Object.assign(gh, { host: '', repo: '', token: '', tokenExp: 0, driveRoot: '', branch: '', head: '', files: {}, pages: {}, lastSync: 0, state: 'off', error: '' });
   localStorage.removeItem(GH_KEY);
   renderSidebar();
   if (!quiet) { closeModal(); toast(`${name} disconnected on this device — the repository and its history are untouched.`); }
@@ -2927,7 +3116,7 @@ function githubButton() {
   if (gh.state === 'auth' || gh.state === 'error') return h('button', { class: 'sb-item warn', onclick: openGitHubModal }, h('span', { class: 'sb-ico' }, '⚠'), `${name} sync problem`);
   if (gh.state === 'ok') return h('button', { class: 'sb-item', onclick: openGitHubModal, title: gh.lastSync ? 'Last sync ' + new Date(gh.lastSync).toLocaleString('en-GB') : '' },
     h('span', { class: 'sb-ico' }, '⇅'), h('span', { class: 'sb-txt' }, `${name}: ` + gh.repo.split('/').pop()));
-  return h('button', { class: 'sb-item', onclick: openGitHubModal }, h('span', { class: 'sb-ico' }, '⇅'), 'Back up to GitHub / GitLab');
+  return h('button', { class: 'sb-item', onclick: openGitHubModal }, h('span', { class: 'sb-ico' }, '⇅'), googleCfg() ? 'Back up: Google Drive, GitHub…' : 'Back up to GitHub / GitLab');
 }
 function openGitHubModal() {
   const link = (text, href) => h('a', { href, target: '_blank', rel: 'noopener' }, text);
@@ -2944,13 +3133,19 @@ function openGitHubModal() {
         h('span', null, 'Sync automatically when Braindead opens and every 10 minutes')),
       h('div', { class: 'modal-foot', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } },
         h('button', { class: 'btn primary', disabled: gh.busy, onclick: () => { gh.state = 'ok'; ghSync(); } }, gh.busy ? 'Syncing…' : 'Sync now'),
-        h('a', { class: 'btn', href: P.history(), target: '_blank', rel: 'noopener' }, 'View history'),
-        gh.state === 'auth' ? h('button', { class: 'btn', onclick: () => { const r = gh.host ? `${gh.host}/${gh.repo}` : gh.repo; gh.pick = gh.provider; ghForget(true); openGitHubModal(); $('.gh-repo').value = r; } }, 'Use a new token') : null,
+        h('a', { class: 'btn', href: P.history(), target: '_blank', rel: 'noopener' }, gh.provider === 'gdrive' ? 'Open in Google Drive' : 'View history'),
+        gh.state === 'auth' && gh.provider === 'gdrive' ? h('button', { class: 'btn', onclick: driveReconnect }, 'Reconnect Google') : null,
+        gh.state === 'auth' && gh.provider !== 'gdrive' ? h('button', { class: 'btn', onclick: () => { const r = gh.host ? `${gh.host}/${gh.repo}` : gh.repo; gh.pick = gh.provider; ghForget(true); openGitHubModal(); $('.gh-repo').value = r; } }, 'Use a new token') : null,
         h('button', { class: 'btn danger', onclick: () => ghForget() }, 'Disconnect')),
-      h('p', { class: 'muted sm' }, 'Each sync is one commit. Open “View history”, then a file and its history, to see or restore any version of a page.'),
+      h('p', { class: 'muted sm' }, gh.provider === 'gdrive'
+        ? 'Your pages are in the Braindead folder of your Drive. Drive keeps earlier versions of each file (right-click → File information → Manage versions), and deleted pages go to the Drive trash.'
+        : 'Each sync is one commit. Open “View history”, then a file and its history, to see or restore any version of a page.'),
     ];
   } else {
-    const kind = gh.pick === 'gitlab' ? 'gitlab' : 'github';
+    const kind = gh.pick === 'gdrive' && googleCfg() ? 'gdrive' : gh.pick === 'gitlab' ? 'gitlab' : 'github';
+    const tabs = [['github', 'GitHub'], ['gitlab', 'GitLab'], ...(googleCfg() ? [['gdrive', 'Google Drive']] : [])];
+    const tabBar = h('div', { class: 'seg', style: { gridTemplateColumns: `repeat(${tabs.length}, 1fr)`, maxWidth: tabs.length * 130 + 'px', margin: '4px 0 6px' } },
+      tabs.map(([k, label]) => h('button', { class: kind === k ? 'on' : '', onclick: () => { gh.pick = k; openGitHubModal(); } }, label)));
     const repoIn = h('input', { class: 'in gh-repo', placeholder: kind === 'github' ? 'your-name/braindead-data' : 'your-name/braindead-data  or  https://gitlab.example.com/group/braindead-data', autocomplete: 'off', spellcheck: 'false' });
     const tokenIn = h('input', { class: 'in', type: 'password', placeholder: kind === 'github' ? 'github_pat_…' : 'glpat-…', autocomplete: 'off' });
     const steps = kind === 'github' ? [
@@ -2969,10 +3164,15 @@ function openGitHubModal() {
         ' — it only reaches this project. If that page is not available on your plan, create a ',
         link('personal access token', 'https://gitlab.com/-/user_settings/personal_access_tokens'), ' with scope ', h('b', null, 'api'), ' and a short expiration. Copy the token.'),
     ];
-    body = [
-      h('div', { class: 'seg', style: { gridTemplateColumns: '1fr 1fr', maxWidth: '260px', margin: '4px 0 6px' } },
-        h('button', { class: kind === 'github' ? 'on' : '', onclick: () => { gh.pick = 'github'; openGitHubModal(); } }, 'GitHub'),
-        h('button', { class: kind === 'gitlab' ? 'on' : '', onclick: () => { gh.pick = 'gitlab'; openGitHubModal(); } }, 'GitLab')),
+    body = kind === 'gdrive' ? [
+      tabBar,
+      h('p', { class: 'sync-p' }, 'Sign in with your Google account: Braindead keeps your pages as readable files in a ', h('b', null, 'Braindead'),
+        ' folder of your Google Drive, and syncs it between your computer and your phone. It can only see the files it creates — nothing else in your Drive.'),
+      h('div', { class: 'modal-foot', style: { justifyContent: 'flex-start' } },
+        h('button', { class: 'btn primary', onclick: driveConnect }, 'Connect Google Drive')),
+      h('p', { class: 'muted sm' }, 'Google asks you to sign in again about once an hour; Braindead renews it when you click in the app.'),
+    ] : [
+      tabBar,
       steps,
       step(3, 'Paste them here', h('div', { class: 'gh-form' }, repoIn, tokenIn)),
       h('div', { class: 'modal-foot', style: { justifyContent: 'flex-start' } },
@@ -2980,9 +3180,9 @@ function openGitHubModal() {
       h('p', { class: 'muted sm' }, 'The token stays in this browser only. Do step 3 once on each device (computer, phone…).'),
     ];
   }
-  modal('Back up to GitHub or GitLab', [
-    h('p', { class: 'sync-p' }, 'Braindead can save everything into a ', h('b', null, 'private repository'), ' on GitHub or GitLab',
-      '. Every sync is a commit, so you keep the full history of every page — and your computer and phone stay in sync.'),
+  modal(googleCfg() ? 'Back up and sync' : 'Back up to GitHub or GitLab', [
+    h('p', { class: 'sync-p' }, 'Braindead can save everything into a ', h('b', null, 'private repository'), ' on GitHub or GitLab', googleCfg() ? ', or into your Google Drive' : '',
+      '. Your computer and phone stay in sync, and you keep the history of every page (each sync is a commit on GitHub / GitLab; Drive keeps file versions).'),
     body,
   ], { cls: 'gh-modal' });
 }

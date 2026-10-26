@@ -23,6 +23,7 @@ Built to keep track of tasks, projects, groceries, paperwork and recurring bills
 - **9 themes**: Snow, Sand, Mint, Lavender, Peach, Sky, Paper, Night, Ink.
 - **Apps**: extra HTML pages (budget tracker, habit tracker…) that live in `apps/`, show up in the sidebar and can read and write your databases. Ask Claude Code to build one — see below.
 - **Vault folder** (Chrome / Edge desktop), like Obsidian: every page is also saved as a readable file — one folder per database, one file per page. Put the folder in Google Drive, Dropbox or OneDrive to back it up online and share it between computers. Edits made in the files come back into Braindead.
+- **Google Drive in one click** (on the hosted version): sign in with Google and your pages sync into a Braindead folder of your Drive — computer and phone.
 - **Back up to GitHub or GitLab**: sync everything into a private repository (gitlab.com or your own GitLab) — every sync is a commit, so you keep the full history of every page, and it works on phones too.
 - **AI agents can write into it**: vaults, zips and data repos include an `AGENTS.md` ([guide](plugins/braindead/skills/braindead/agent-guide.md)) explaining the file format, so Claude Code or any agent can add or edit pages — “add these 5 groceries”, “create a task for each email I need to answer”.
 - Global search with `Ctrl+K`, mobile layout, installable as an app (PWA), works offline.
@@ -110,7 +111,19 @@ Ask for a quote for:
 You can edit the files by hand: change a property, tick a checkbox, add a new property line or even create a new file — Braindead picks it up.
 
 - **Back up to GitHub or GitLab** (any browser, phones included): create a private repository (GitHub, gitlab.com or a self-hosted GitLab) and a token limited to it, paste them in Braindead (the app shows the exact steps). Braindead then commits the vault files when it opens and every 10 minutes, and pulls changes made on your other devices. Each commit lists what changed; GitHub's history lets you see or restore any version of a page. The token is stored only in your browser — never in your data, your vault, your zip or any repository.
+- **Google Drive** (any browser, phones included; on https://vicodelavega.github.io/braindead/ or a copy with its own Google client ID): click **Back up → Google Drive → Connect Google Drive** and sign in. Your pages live in a `Braindead` folder of your Drive, in the same readable format. Braindead can only see the files it creates. Drive keeps earlier versions of each file, and deleted pages go to the Drive trash.
 - **Export (.zip)** downloads your whole vault as a zip — works in every browser, phones included. Unzip it and you get the same readable folder. **Import (.zip)** loads one back (any vault folder zipped by hand works too, as do older `.json` backups) — handy to move your data to a phone or another browser.
+
+### Google Drive on your own copy
+
+The Google button only appears on sites listed in `config.js`. To enable it on your copy:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/projectcreate), create a project and enable the **Google Drive API**.
+2. **OAuth consent screen**: External, add yourself as a test user, add the scope `.../auth/drive.file`.
+3. **Clients → Create client → Web application**, with your site's origin (e.g. `https://you.github.io`) under *Authorized JavaScript origins*.
+4. Put the client ID and your origin in `config.js`.
+
+While the Google app is in *Testing* mode, only the test users you add can sign in — perfect for personal use. Publishing it for everyone requires Google's verification.
 
 ## Run locally
 
@@ -127,6 +140,7 @@ then open http://localhost:8000.
 | File | Purpose |
 |---|---|
 | `index.html` | Page skeleton |
+| `config.js` | Optional integrations (Google client ID) |
 | `styles.css` | Themes and layout |
 | `app.js` | All the logic: data model, views, editor, reminders |
 | `apps/` | Apps: `apps.json` (list), `braindead-sdk.js` (API for apps), `finances.html` (example) |

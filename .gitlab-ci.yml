@@ -5,7 +5,7 @@ pages:
   stage: deploy
   script:
     - mkdir -p public
-    - cp -r index.html app.js styles.css sw.js manifest.webmanifest icon.svg apps plugins public/
+    - cp -r index.html config.js app.js styles.css sw.js manifest.webmanifest icon.svg apps plugins public/
   artifacts:
     paths:
       - public
