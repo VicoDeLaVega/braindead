@@ -1,7 +1,7 @@
 {
   "name": "braindead",
   "displayName": "Braindead",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Let Claude read and write your Braindead pages: tasks, groceries, projects, paperwork, bills and notes",
   "author": {
     "name": "Victor Ceitelis"

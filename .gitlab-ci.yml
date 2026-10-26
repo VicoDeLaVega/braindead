@@ -1,0 +1,13 @@
+# Publishes Braindead on GitLab Pages (https://<user>.gitlab.io/<project>/).
+# The app is static: the job only copies the files into public/.
+pages:
+  image: alpine:latest
+  stage: deploy
+  script:
+    - mkdir -p public
+    - cp -r index.html app.js styles.css sw.js manifest.webmanifest icon.svg apps plugins public/
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

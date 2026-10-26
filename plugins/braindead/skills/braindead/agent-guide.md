@@ -1,7 +1,7 @@
 # Writing into Braindead — guide for AI agents
 
 You are working in a **Braindead vault**: the data of a personal Notion-like app, stored as plain files.
-It lives either in a private GitHub repository (usually `braindead-data`) or in a folder synced by
+It lives either in a private GitHub or GitLab repository (usually `braindead-data`) or in a folder synced by
 Google Drive / Dropbox / OneDrive. Braindead reads these files back on its own: when it opens, every
 10 minutes, and when the user clicks **Sync now**. You never need the app itself — just edit files.
 
@@ -131,7 +131,7 @@ Link: https://ants.gouv.fr
 **Is there a `.git` folder here?**
 
 - **No → this is the vault folder Braindead watches.** Just save the files: Braindead re-reads the folder every few seconds while it is open, and the user sees your pages right away. Do not run git here. This is the recommended setup.
-- **Yes → this is a git clone of the data repository.** Braindead does **not** see this folder: your changes only reach Braindead once they are on GitHub. You must commit and push yourself — never leave changes uncommitted, and never assume Braindead will commit them:
+- **Yes → this is a git clone of the data repository.** Braindead does **not** see this folder: your changes only reach Braindead once they are pushed to GitHub / GitLab. You must commit and push yourself — never leave changes uncommitted, and never assume Braindead will commit them:
 
   ```bash
   git pull --rebase

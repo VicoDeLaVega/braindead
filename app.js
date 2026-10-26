@@ -2631,32 +2631,33 @@ setInterval(() => {
   vaultSync({ push: false });
 }, 5000);
 
-/* ================= GitHub backup (private repo, full history) ================= */
+/* ================= Back up to GitHub or GitLab (private repo, full history) ================= */
 // Syncs the same vault files (_braindead.json + one file per page) into a private repository
-// through the GitHub REST API — every sync is one commit, so each page keeps its history.
+// through the GitHub or GitLab REST API — every sync is one commit, so each page keeps its history.
 // The token is stored only in this browser, never in the data, the vault or the zip.
 const GH_KEY = 'braindead.github';
-const gh = { repo: '', token: '', branch: '', auto: true, head: '', files: {}, pages: {}, lastSync: 0, syncedSavedAt: 0, state: 'off', error: '', busy: false };
+const gh = { provider: 'github', host: '', repo: '', token: '', branch: '', auto: true, head: '', files: {}, pages: {}, lastSync: 0, syncedSavedAt: 0, state: 'off', error: '', busy: false, pick: 'github' };
 try { Object.assign(gh, JSON.parse(localStorage.getItem(GH_KEY)) || {}); } catch (e) { /* no config yet */ }
 gh.state = gh.repo && gh.token ? 'ok' : 'off';
 gh.busy = false;
 function ghSave() {
-  const { busy, state, error, ...keep } = gh;
+  const { busy, state, error, pick, ...keep } = gh;
   try { localStorage.setItem(GH_KEY, JSON.stringify(keep)); } catch (e) { /* quota */ }
 }
-async function ghApi(method, path, body) {
-  const r = await fetch('https://api.github.com' + path, {
+async function remoteFetch(label, url, headers, method, body, raw) {
+  const r = await fetch(url, {
     method, cache: 'no-store', body: body ? JSON.stringify(body) : undefined,
-    headers: { Authorization: 'Bearer ' + gh.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { ...headers, ...(body ? { 'Content-Type': 'application/json' } : {}) },
   });
   if (!r.ok) {
     let msg = r.statusText;
-    try { msg = (await r.json()).message || msg; } catch (e) { /* not JSON */ }
-    const err = new Error(`GitHub ${r.status}: ${msg}`);
+    try { const j = await r.json(); msg = j.message || j.error || msg; if (typeof msg !== 'string') msg = JSON.stringify(msg); } catch (e) { /* not JSON */ }
+    const err = new Error(`${label} ${r.status}: ${msg}`);
     err.status = r.status;
     throw err;
   }
-  return r.status === 204 ? null : r.json();
+  if (r.status === 204) return null;
+  return raw ? r.text() : r.json();
 }
 const b64ToText = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), c => c.charCodeAt(0)));
 function textToB64(text) {
@@ -2665,7 +2666,8 @@ function textToB64(text) {
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
-// Same id git gives a file ("blob <size>" NUL content, SHA-1), so unchanged files are skipped.
+// Same id git gives a file ("blob <size>" NUL content, SHA-1) — both GitHub and GitLab report it,
+// so unchanged files are skipped without downloading them.
 async function blobSha(text) {
   const data = new TextEncoder().encode(text);
   const head = new TextEncoder().encode('blob ' + data.length + String.fromCharCode(0));
@@ -2676,20 +2678,89 @@ async function blobSha(text) {
 }
 const isVaultPath = p => p === META_FILE || /^[^/]+\/[^/]+\.md(\.html)?$/i.test(p);
 const GH_README = '# Braindead data\n\nThis private repository is written by [Braindead](https://github.com/VicoDeLaVega/braindead): one folder per database, one file per page, and `_braindead.json` for databases and views. Every sync is a commit — browse the history to see or restore any version of a page.\n\nAI agents can add and edit pages here: see `AGENTS.md`.\n';
+const conflict = () => Object.assign(new Error('another device saved in the meantime'), { status: 422 });
 
-async function ghHead() {
-  try { return (await ghApi('GET', `/repos/${gh.repo}/git/ref/heads/${gh.branch}`)).object.sha; }
-  catch (e) { if (e.status === 409 || e.status === 404) return null; throw e; } // empty repository
-}
+// Each provider: info(), head(), tree(head), blob(sha), init(), commit(head, remote, changes, message).
+const PROVIDERS = {
+  github: {
+    name: 'GitHub',
+    web: () => `https://github.com/${gh.repo}`,
+    history: () => `https://github.com/${gh.repo}/commits`,
+    api: (method, path, body) => remoteFetch('GitHub', 'https://api.github.com' + path,
+      { Authorization: 'Bearer ' + gh.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, method, body),
+    async info() {
+      const i = await this.api('GET', `/repos/${gh.repo}`);
+      return { private: i.private, branch: i.default_branch || 'main', canPush: !i.permissions || i.permissions.push };
+    },
+    async head() {
+      try { return (await this.api('GET', `/repos/${gh.repo}/git/ref/heads/${gh.branch}`)).object.sha; }
+      catch (e) { if (e.status === 409 || e.status === 404) return null; throw e; } // empty repository
+    },
+    async tree(head) {
+      const commit = await this.api('GET', `/repos/${gh.repo}/git/commits/${head}`);
+      const tree = await this.api('GET', `/repos/${gh.repo}/git/trees/${commit.tree.sha}?recursive=1`);
+      return { base: commit.tree.sha, all: new Map(tree.tree.filter(x => x.type === 'blob').map(x => [x.path, x.sha])) };
+    },
+    async blob(sha) { return b64ToText((await this.api('GET', `/repos/${gh.repo}/git/blobs/${sha}`)).content); },
+    async init() { await this.api('PUT', `/repos/${gh.repo}/contents/README.md`, { message: 'Create Braindead data repository', content: textToB64(GH_README) }); },
+    async commit(head, remote, changes, message) {
+      const entries = changes.map(c => c.content == null ? { path: c.path, mode: '100644', type: 'blob', sha: null } : { path: c.path, mode: '100644', type: 'blob', content: c.content });
+      const tree = await this.api('POST', `/repos/${gh.repo}/git/trees`, { base_tree: remote.base, tree: entries });
+      const commit = await this.api('POST', `/repos/${gh.repo}/git/commits`, { message, tree: tree.sha, parents: [head] });
+      await this.api('PATCH', `/repos/${gh.repo}/git/refs/heads/${gh.branch}`, { sha: commit.sha }); // 422 if another device pushed
+      return commit.sha;
+    },
+  },
+  gitlab: {
+    name: 'GitLab',
+    base: () => (gh.host || 'https://gitlab.com').replace(/\/+$/, ''),
+    pid: () => encodeURIComponent(gh.repo),
+    web() { return `${this.base()}/${gh.repo}`; },
+    history() { return `${this.base()}/${gh.repo}/-/commits/${encodeURIComponent(gh.branch || 'main')}`; },
+    api(method, path, body, raw) { return remoteFetch('GitLab', this.base() + '/api/v4' + path, { 'PRIVATE-TOKEN': gh.token }, method, body, raw); },
+    async info() {
+      const i = await this.api('GET', `/projects/${this.pid()}`);
+      const level = Math.max(i.permissions?.project_access?.access_level || 0, i.permissions?.group_access?.access_level || 0);
+      return { private: i.visibility === 'private', branch: i.default_branch || 'main', canPush: level === 0 || level >= 30 }; // 30 = Developer
+    },
+    async head() {
+      try { return (await this.api('GET', `/projects/${this.pid()}/repository/branches/${encodeURIComponent(gh.branch)}`)).commit.id; }
+      catch (e) { if (e.status === 404) return null; throw e; } // empty repository
+    },
+    async tree(head) {
+      const all = new Map();
+      for (let page = 1; ; page++) {
+        const items = await this.api('GET', `/projects/${this.pid()}/repository/tree?ref=${head}&recursive=true&per_page=100&page=${page}`);
+        for (const x of items) if (x.type === 'blob') all.set(x.path, x.id);
+        if (items.length < 100) break;
+      }
+      return { all };
+    },
+    blob(sha) { return this.api('GET', `/projects/${this.pid()}/repository/blobs/${sha}/raw`, null, true); },
+    async init() {
+      await this.api('POST', `/projects/${this.pid()}/repository/commits`,
+        { branch: gh.branch, commit_message: 'Create Braindead data repository', actions: [{ action: 'create', file_path: 'README.md', content: GH_README }] });
+    },
+    async commit(head, remote, changes, message) {
+      if (await this.head() !== head) throw conflict(); // GitLab has no "expected parent": check just before
+      const actions = changes.map(c => c.content == null ? { action: 'delete', file_path: c.path }
+        : { action: remote.all.has(c.path) ? 'update' : 'create', file_path: c.path, content: c.content });
+      try { return (await this.api('POST', `/projects/${this.pid()}/repository/commits`, { branch: gh.branch, commit_message: message, actions })).id; }
+      catch (e) { if (e.status === 400) throw conflict(); throw e; } // e.g. a file created meanwhile
+    },
+  },
+};
+const provider = () => PROVIDERS[gh.provider] || PROVIDERS.github;
+
 async function ghTree(head) {
-  const commit = await ghApi('GET', `/repos/${gh.repo}/git/commits/${head}`);
-  const tree = await ghApi('GET', `/repos/${gh.repo}/git/trees/${commit.tree.sha}?recursive=1`);
-  return { treeSha: commit.tree.sha, all: new Map(tree.tree.map(x => [x.path, x.sha])), files: Object.fromEntries(tree.tree.filter(x => x.type === 'blob' && isVaultPath(x.path)).map(x => [x.path, x.sha])) };
+  const t = await provider().tree(head);
+  t.files = Object.fromEntries([...t.all].filter(([p]) => isVaultPath(p)));
+  return t;
 }
-// Applies what changed on GitHub since this device's last sync. The most recent edit wins.
+// Applies what changed in the repository since this device's last sync. The most recent edit wins.
 async function ghPull(remote) {
   let changed = false;
-  const fetchText = async sha => b64ToText((await ghApi('GET', `/repos/${gh.repo}/git/blobs/${sha}`)).content);
+  const fetchText = sha => provider().blob(sha);
   const metaSha = remote.files[META_FILE];
   if (metaSha && metaSha !== gh.files[META_FILE]) {
     try {
@@ -2739,49 +2810,45 @@ async function ghPull(remote) {
   }
   return changed;
 }
-// Commits whatever differs from GitHub, as a single commit.
+// Commits whatever differs from the repository, as a single commit.
 async function ghPush(head, remote) {
-  const local = vaultFiles(), next = {}, entries = [];
+  const local = vaultFiles(), next = {}, changes = [];
   let added = 0, updated = 0, removed = 0;
   for (const f of local) {
     const sha = await blobSha(f.text);
     next[f.path] = sha;
     if (remote.files[f.path] === sha) continue;
     if (remote.files[f.path]) updated++; else added++;
-    entries.push({ path: f.path, mode: '100644', type: 'blob', content: f.text });
+    changes.push({ path: f.path, content: f.text });
   }
   for (const path of Object.keys(remote.files)) {
-    if (!next[path]) { entries.push({ path, mode: '100644', type: 'blob', sha: null }); removed++; }
+    if (!next[path]) { changes.push({ path, content: null }); removed++; }
   }
   for (const [path, text] of await agentDocs()) {
     const sha = remote.all.get(path);
     if (sha === await blobSha(text)) continue;
     // Missing, or an older copy of our own guide: (re)write it. A file the user wrote is left alone.
-    if (!sha || isOurDoc(b64ToText((await ghApi('GET', `/repos/${gh.repo}/git/blobs/${sha}`)).content))) {
-      entries.push({ path, mode: '100644', type: 'blob', content: text });
-    }
+    if (!sha || isOurDoc(await provider().blob(sha))) changes.push({ path, content: text });
   }
-  if (entries.length) {
-    const tree = await ghApi('POST', `/repos/${gh.repo}/git/trees`, { base_tree: remote.treeSha, tree: entries });
+  if (changes.length) {
     const what = [added && `${added} added`, updated && `${updated} updated`, removed && `${removed} deleted`].filter(Boolean).join(', ') || 'add the guide for AI agents';
-    const commit = await ghApi('POST', `/repos/${gh.repo}/git/commits`, { message: `Braindead: ${what}`, tree: tree.sha, parents: [head] });
-    await ghApi('PATCH', `/repos/${gh.repo}/git/refs/heads/${gh.branch}`, { sha: commit.sha });
-    gh.head = commit.sha;
+    gh.head = await provider().commit(head, remote, changes, `Braindead: ${what}`);
   } else gh.head = head;
   gh.files = next;
   gh.pages = Object.fromEntries(local.filter(f => f.id).map(f => [f.id, { path: f.path, updated: pageById(f.id).updated }]));
-  return entries.length;
+  return changes.length;
 }
 async function ghSync({ quiet = false } = {}) {
   if (gh.state === 'off' || gh.busy) return;
   gh.busy = true;
+  const P = provider();
   try {
-    if (!gh.branch) gh.branch = (await ghApi('GET', `/repos/${gh.repo}`)).default_branch || 'main';
-    let head = await ghHead();
+    if (!gh.branch) gh.branch = (await P.info()).branch;
+    let head = await P.head();
     if (!head) { // empty repository: create it with a README first
-      await ghApi('PUT', `/repos/${gh.repo}/contents/README.md`, { message: 'Create Braindead data repository', content: textToB64(GH_README) });
-      gh.branch = (await ghApi('GET', `/repos/${gh.repo}`)).default_branch || gh.branch;
-      head = await ghHead();
+      await P.init();
+      gh.branch = (await P.info()).branch || gh.branch;
+      head = await P.head();
     }
     let changed = false, written;
     for (let attempt = 0; ; attempt++) {
@@ -2790,39 +2857,48 @@ async function ghSync({ quiet = false } = {}) {
       try { written = await ghPush(head, remote); break; }
       catch (e) {
         if (e.status !== 422 || attempt) throw e;
-        head = await ghHead(); // another device pushed in the meantime: merge its changes, then retry
+        head = await P.head(); // another device pushed in the meantime: merge its changes, then retry
       }
     }
     if (changed) { persistLocal(); parseHash(); render(); notifyApps(); }
     Object.assign(gh, { state: 'ok', error: '', lastSync: Date.now(), syncedSavedAt: S.savedAt || 0 });
     ghSave();
-    if (!quiet) toast(written ? `Saved to GitHub ✓ (${written} file${written > 1 ? 's' : ''})` : changed ? 'Updated from GitHub ✓' : 'GitHub is up to date ✓');
-    else if (changed) toast('Updated from GitHub');
+    if (!quiet) toast(written ? `Saved to ${P.name} ✓ (${written} file${written > 1 ? 's' : ''})` : changed ? `Updated from ${P.name} ✓` : `${P.name} is up to date ✓`);
+    else if (changed) toast(`Updated from ${P.name}`);
   } catch (e) {
     gh.state = e.status === 401 || e.status === 403 || e.status === 404 ? 'auth' : 'error';
-    gh.error = e.message;
-    if (!quiet) toast('GitHub sync failed — ' + e.message);
+    gh.error = e.message === 'Failed to fetch' ? `could not reach ${P.name} (offline, or the server does not allow browser access)` : e.message;
+    if (!quiet) toast(`${P.name} sync failed — ` + gh.error);
   } finally {
     gh.busy = false;
     renderSidebar();
     if ($('#modal-root .gh-modal')) openGitHubModal();
   }
 }
-async function ghConnect(repo, token) {
-  repo = repo.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return toast('The repository must look like your-name/braindead-data');
+// Accepts "owner/repo", "group/subgroup/project" (GitLab) or a full URL (also self-hosted GitLab).
+function parseRepo(input, kind) {
+  let s = input.trim().replace(/\.git$/i, '').replace(/\/+$/, ''), host = '';
+  const m = s.match(/^(https?:\/\/[^/]+)\/(.+)$/i);
+  if (m) { host = m[1]; s = m[2].replace(/\/-\/.*$/, ''); }
+  if (kind === 'github') return /^[\w.-]+\/[\w.-]+$/.test(s) && (!host || /github\.com$/i.test(host)) ? { repo: s, host: '' } : null;
+  return /^[\w.-]+(\/[\w.-]+)+$/.test(s) ? { repo: s, host: host && !/^https?:\/\/gitlab\.com$/i.test(host) ? host : '' } : null;
+}
+async function ghConnect(kind, repoInput, token) {
+  const parsed = parseRepo(repoInput, kind);
+  if (!parsed) return toast(kind === 'github' ? 'The repository must look like your-name/braindead-data' : 'The project must look like your-name/braindead-data, or be its full URL');
   if (!token.trim()) return toast('Paste the access token first');
-  Object.assign(gh, { repo, token: token.trim(), branch: '', head: '', files: {}, pages: {}, lastSync: 0, state: 'ok', error: '' });
+  Object.assign(gh, { provider: kind, host: parsed.host, repo: parsed.repo, token: token.trim(), branch: '', head: '', files: {}, pages: {}, lastSync: 0, state: 'ok', error: '' });
+  const P = provider();
   try {
-    const info = await ghApi('GET', `/repos/${repo}`);
-    if (!info.private && !confirm(`“${repo}” is PUBLIC: anyone could read your pages.\n\nOK: use it anyway. Cancel: stop (recommended — make it private first).`)) return ghForget(true);
-    if (info.permissions && !info.permissions.push) throw new Error('this token cannot write to the repository — give it “Contents: Read and write”');
-    gh.branch = info.default_branch || 'main';
-    const head = await ghHead();
+    const info = await P.info();
+    if (!info.private && !confirm(`“${gh.repo}” is not private: other people could read your pages.\n\nOK: use it anyway. Cancel: stop (recommended — make it private first).`)) return ghForget(true);
+    if (!info.canPush) throw new Error(kind === 'github' ? 'this token cannot write to the repository — give it “Contents: Read and write”' : 'this token cannot write to the project — use the Developer role or higher');
+    gh.branch = info.branch;
+    const head = await P.head();
     if (head) {
       const remote = await ghTree(head);
       if (remote.files[META_FILE]) {
-        if (confirm(`“${repo}” already contains Braindead data.\n\nOK: load it — this browser will show the data from GitHub (choose this on your second device).\nCancel: merge — keep this browser's pages and add them to GitHub.`)) {
+        if (confirm(`“${gh.repo}” already contains Braindead data.\n\nOK: load it — this browser will show the data from ${P.name} (choose this on your second device).\nCancel: merge — keep this browser's pages and add them to ${P.name}.`)) {
           S.pages = [];
           S.dbs = [];
         } else gh.files[META_FILE] = remote.files[META_FILE]; // keep our databases
@@ -2832,24 +2908,26 @@ async function ghConnect(repo, token) {
     await ghSync();
   } catch (e) {
     gh.state = 'auth';
-    gh.error = e.message;
+    gh.error = e.message === 'Failed to fetch' ? `could not reach ${P.name} (check the address; a self-hosted GitLab must allow browser access to its API)` : e.message;
     ghSave();
     renderSidebar();
-    toast('Could not connect to GitHub — ' + e.message);
+    toast(`Could not connect to ${P.name} — ` + gh.error);
     openGitHubModal();
   }
 }
 function ghForget(quiet) {
-  Object.assign(gh, { repo: '', token: '', branch: '', head: '', files: {}, pages: {}, lastSync: 0, state: 'off', error: '' });
+  const name = provider().name;
+  Object.assign(gh, { host: '', repo: '', token: '', branch: '', head: '', files: {}, pages: {}, lastSync: 0, state: 'off', error: '' });
   localStorage.removeItem(GH_KEY);
   renderSidebar();
-  if (!quiet) { closeModal(); toast('GitHub disconnected on this device — the repository and its history are untouched.'); }
+  if (!quiet) { closeModal(); toast(`${name} disconnected on this device — the repository and its history are untouched.`); }
 }
 function githubButton() {
-  if (gh.state === 'auth' || gh.state === 'error') return h('button', { class: 'sb-item warn', onclick: openGitHubModal }, h('span', { class: 'sb-ico' }, '⚠'), 'GitHub sync problem');
+  const name = provider().name;
+  if (gh.state === 'auth' || gh.state === 'error') return h('button', { class: 'sb-item warn', onclick: openGitHubModal }, h('span', { class: 'sb-ico' }, '⚠'), `${name} sync problem`);
   if (gh.state === 'ok') return h('button', { class: 'sb-item', onclick: openGitHubModal, title: gh.lastSync ? 'Last sync ' + new Date(gh.lastSync).toLocaleString('en-GB') : '' },
-    h('span', { class: 'sb-ico' }, '⇅'), h('span', { class: 'sb-txt' }, 'GitHub: ' + gh.repo.split('/')[1]));
-  return h('button', { class: 'sb-item', onclick: openGitHubModal }, h('span', { class: 'sb-ico' }, '⇅'), 'Back up to GitHub');
+    h('span', { class: 'sb-ico' }, '⇅'), h('span', { class: 'sb-txt' }, `${name}: ` + gh.repo.split('/').pop()));
+  return h('button', { class: 'sb-item', onclick: openGitHubModal }, h('span', { class: 'sb-ico' }, '⇅'), 'Back up to GitHub / GitLab');
 }
 function openGitHubModal() {
   const link = (text, href) => h('a', { href, target: '_blank', rel: 'noopener' }, text);
@@ -2857,37 +2935,53 @@ function openGitHubModal() {
   const when = t => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   let body;
   if (gh.state !== 'off') {
+    const P = provider();
     body = [
-      h('div', { class: 'tip' }, gh.state === 'ok' ? '✓ Connected to ' : '⚠ Not syncing: ', link(gh.repo, `https://github.com/${gh.repo}`),
+      h('div', { class: 'tip' }, gh.state === 'ok' ? `✓ Connected to ${P.name}: ` : '⚠ Not syncing: ', link(gh.repo, P.web()),
         gh.state === 'ok' && gh.lastSync ? h('span', { class: 'muted' }, ' · last sync ' + when(gh.lastSync)) : null),
       gh.error ? h('p', { class: 'sync-p' }, gh.error, gh.state === 'auth' ? ' — the token may have expired or lost access: connect again with a new one.' : '') : null,
       h('label', { class: 'fmt' }, h('input', { type: 'checkbox', class: 'chk', checked: gh.auto, onchange: e => { gh.auto = e.target.checked; ghSave(); } }),
         h('span', null, 'Sync automatically when Braindead opens and every 10 minutes')),
       h('div', { class: 'modal-foot', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } },
         h('button', { class: 'btn primary', disabled: gh.busy, onclick: () => { gh.state = 'ok'; ghSync(); } }, gh.busy ? 'Syncing…' : 'Sync now'),
-        h('a', { class: 'btn', href: `https://github.com/${gh.repo}/commits`, target: '_blank', rel: 'noopener' }, 'View history'),
-        gh.state === 'auth' ? h('button', { class: 'btn', onclick: () => { const r = gh.repo; ghForget(true); openGitHubModal(); $('.gh-repo').value = r; } }, 'Use a new token') : null,
+        h('a', { class: 'btn', href: P.history(), target: '_blank', rel: 'noopener' }, 'View history'),
+        gh.state === 'auth' ? h('button', { class: 'btn', onclick: () => { const r = gh.host ? `${gh.host}/${gh.repo}` : gh.repo; gh.pick = gh.provider; ghForget(true); openGitHubModal(); $('.gh-repo').value = r; } }, 'Use a new token') : null,
         h('button', { class: 'btn danger', onclick: () => ghForget() }, 'Disconnect')),
-      h('p', { class: 'muted sm' }, 'Each sync is one commit. Open “View history”, click a file and choose “History” to see or restore any version of a page.'),
+      h('p', { class: 'muted sm' }, 'Each sync is one commit. Open “View history”, then a file and its history, to see or restore any version of a page.'),
     ];
   } else {
-    const repoIn = h('input', { class: 'in gh-repo', placeholder: 'your-name/braindead-data', autocomplete: 'off', spellcheck: 'false' });
-    const tokenIn = h('input', { class: 'in', type: 'password', placeholder: 'github_pat_…', autocomplete: 'off' });
-    body = [
+    const kind = gh.pick === 'gitlab' ? 'gitlab' : 'github';
+    const repoIn = h('input', { class: 'in gh-repo', placeholder: kind === 'github' ? 'your-name/braindead-data' : 'your-name/braindead-data  or  https://gitlab.example.com/group/braindead-data', autocomplete: 'off', spellcheck: 'false' });
+    const tokenIn = h('input', { class: 'in', type: 'password', placeholder: kind === 'github' ? 'github_pat_…' : 'glpat-…', autocomplete: 'off' });
+    const steps = kind === 'github' ? [
       step(1, 'Create a private repository',
         'Open ', link('github.com/new', 'https://github.com/new'), ', name it ', h('code', null, 'braindead-data'), ', choose ', h('b', null, 'Private'), '. Leave it empty.'),
       step(2, 'Create an access token for it',
         'Open ', link('New fine-grained token', 'https://github.com/settings/personal-access-tokens/new'), '. Give it a name and an expiration. Under ',
         h('b', null, 'Repository access'), ' pick ', h('b', null, 'Only select repositories'), ' → your new repository. Under ',
         h('b', null, 'Permissions → Repository permissions'), ', set ', h('b', null, 'Contents'), ' to ', h('b', null, 'Read and write'), '. Generate, then copy the token.'),
+    ] : [
+      step(1, 'Create a private project',
+        'Open ', link('gitlab.com/projects/new', 'https://gitlab.com/projects/new'), ' (or the same page on your own GitLab) → ', h('b', null, 'Create blank project'),
+        ', name it ', h('code', null, 'braindead-data'), ', visibility ', h('b', null, 'Private'), '.'),
+      step(2, 'Create an access token for it',
+        'Best: in the project, ', h('b', null, 'Settings → Access tokens'), ' → add a token with role ', h('b', null, 'Developer'), ' and scope ', h('b', null, 'api'),
+        ' — it only reaches this project. If that page is not available on your plan, create a ',
+        link('personal access token', 'https://gitlab.com/-/user_settings/personal_access_tokens'), ' with scope ', h('b', null, 'api'), ' and a short expiration. Copy the token.'),
+    ];
+    body = [
+      h('div', { class: 'seg', style: { gridTemplateColumns: '1fr 1fr', maxWidth: '260px', margin: '4px 0 6px' } },
+        h('button', { class: kind === 'github' ? 'on' : '', onclick: () => { gh.pick = 'github'; openGitHubModal(); } }, 'GitHub'),
+        h('button', { class: kind === 'gitlab' ? 'on' : '', onclick: () => { gh.pick = 'gitlab'; openGitHubModal(); } }, 'GitLab')),
+      steps,
       step(3, 'Paste them here', h('div', { class: 'gh-form' }, repoIn, tokenIn)),
       h('div', { class: 'modal-foot', style: { justifyContent: 'flex-start' } },
-        h('button', { class: 'btn primary', onclick: () => ghConnect(repoIn.value, tokenIn.value) }, 'Connect')),
-      h('p', { class: 'muted sm' }, 'The token stays in this browser only and can reach nothing but that repository. Do step 3 once on each device (computer, phone…).'),
+        h('button', { class: 'btn primary', onclick: () => ghConnect(kind, repoIn.value, tokenIn.value) }, 'Connect')),
+      h('p', { class: 'muted sm' }, 'The token stays in this browser only. Do step 3 once on each device (computer, phone…).'),
     ];
   }
-  modal('Back up to GitHub', [
-    h('p', { class: 'sync-p' }, 'Braindead can save everything into a ', h('b', null, 'private GitHub repository'),
+  modal('Back up to GitHub or GitLab', [
+    h('p', { class: 'sync-p' }, 'Braindead can save everything into a ', h('b', null, 'private repository'), ' on GitHub or GitLab',
       '. Every sync is a commit, so you keep the full history of every page — and your computer and phone stay in sync.'),
     body,
   ], { cls: 'gh-modal' });

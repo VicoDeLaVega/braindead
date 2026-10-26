@@ -23,7 +23,7 @@ Built to keep track of tasks, projects, groceries, paperwork and recurring bills
 - **9 themes**: Snow, Sand, Mint, Lavender, Peach, Sky, Paper, Night, Ink.
 - **Apps**: extra HTML pages (budget tracker, habit tracker…) that live in `apps/`, show up in the sidebar and can read and write your databases. Ask Claude Code to build one — see below.
 - **Vault folder** (Chrome / Edge desktop), like Obsidian: every page is also saved as a readable file — one folder per database, one file per page. Put the folder in Google Drive, Dropbox or OneDrive to back it up online and share it between computers. Edits made in the files come back into Braindead.
-- **Back up to GitHub**: sync everything into a private GitHub repository — every sync is a commit, so you keep the full history of every page, and it works on phones too.
+- **Back up to GitHub or GitLab**: sync everything into a private repository (gitlab.com or your own GitLab) — every sync is a commit, so you keep the full history of every page, and it works on phones too.
 - **AI agents can write into it**: vaults, zips and data repos include an `AGENTS.md` ([guide](plugins/braindead/skills/braindead/agent-guide.md)) explaining the file format, so Claude Code or any agent can add or edit pages — “add these 5 groceries”, “create a task for each email I need to answer”.
 - Global search with `Ctrl+K`, mobile layout, installable as an app (PWA), works offline.
 
@@ -34,6 +34,8 @@ Starter templates: Tasks, Projects, Groceries, Paperwork, Bills & reminders (wit
 1. Click **Use this template → Create a new repository** (it can have any name).
 2. In your new repo: **Settings → Pages → Source: Deploy from a branch → `main` / `(root)`** → Save.
 3. A minute later your Braindead is live at `https://<your-username>.github.io/<repo-name>/`.
+
+**On GitLab instead:** fork the project (or create a project from it with **Import project → Repository by URL**). The included `.gitlab-ci.yml` publishes it with GitLab Pages on every push to the default branch: it is live at `https://<your-username>.gitlab.io/<project-name>/` (see **Deploy → Pages**). If the project is private, set **Settings → General → Visibility → Pages** to *Everyone* so the app itself is reachable — your data never lives there anyway.
 
 Then, to add your own tools, clone your repo, open it in [Claude Code](https://claude.com/claude-code) and ask, for example:
 
@@ -52,6 +54,8 @@ Let Claude read and write your pages from any Claude Code session — no server,
    /plugin marketplace add VicoDeLaVega/braindead
    /plugin install braindead@braindead
    ```
+
+   From a copy hosted on GitLab, add it by URL instead: `/plugin marketplace add https://gitlab.com/<you>/<project>.git`.
 
 3. Run `/braindead:setup` once: Claude finds your vault folder, checks the link with the app and remembers it.
 
@@ -105,7 +109,7 @@ Ask for a quote for:
 
 You can edit the files by hand: change a property, tick a checkbox, add a new property line or even create a new file — Braindead picks it up.
 
-- **Back up to GitHub** (any browser, phones included): create a private repository and a token limited to it, paste them in Braindead (the app shows the exact steps). Braindead then commits the vault files when it opens and every 10 minutes, and pulls changes made on your other devices. Each commit lists what changed; GitHub's history lets you see or restore any version of a page. The token is stored only in your browser — never in your data, your vault, your zip or any repository.
+- **Back up to GitHub or GitLab** (any browser, phones included): create a private repository (GitHub, gitlab.com or a self-hosted GitLab) and a token limited to it, paste them in Braindead (the app shows the exact steps). Braindead then commits the vault files when it opens and every 10 minutes, and pulls changes made on your other devices. Each commit lists what changed; GitHub's history lets you see or restore any version of a page. The token is stored only in your browser — never in your data, your vault, your zip or any repository.
 - **Export (.zip)** downloads your whole vault as a zip — works in every browser, phones included. Unzip it and you get the same readable folder. **Import (.zip)** loads one back (any vault folder zipped by hand works too, as do older `.json` backups) — handy to move your data to a phone or another browser.
 
 ## Run locally
