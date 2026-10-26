@@ -126,7 +126,7 @@ const prettyUrl = u => String(u).replace(/^https?:\/\/(www\.)?/, '').replace(/\/
 
 /* ================= State ================= */
 let S; // initialised at startup (bottom of file)
-const ui = { route: { name: 'home' }, routeKey: '', peek: null, peekWide: false, search: '', cal: {}, dragId: null, apps: [] };
+const ui = { route: { name: 'home' }, routeKey: '', peek: null, search: '', cal: {}, dragId: null, apps: [] };
 
 function load() {
   try {
@@ -1416,7 +1416,7 @@ function renderPeek(opts = {}) {
   const pg = pageById(ui.peek);
   if (!pg) { ui.peek = null; root.innerHTML = ''; return; }
   const db = dbById(pg.db);
-  const prev = root.querySelector('.peek');
+  const prev = root.querySelector('.peek-scroll');
   const st = prev ? prev.scrollTop : 0;
   root.innerHTML = '';
 
@@ -1469,10 +1469,11 @@ function renderPeek(opts = {}) {
   }, label);
   const sep = () => h('span', { class: 'tb-sep' });
 
-  const panel = h('aside', { class: 'peek' + (ui.peekWide ? ' wide' : ''), role: 'dialog', 'aria-label': pg.title || 'Page' },
+  const center = prefs.peekMode === 'center';
+  const scroller = h('div', { class: 'peek-scroll' },
     h('div', { class: 'peek-top' },
       h('a', { class: 'crumb', href: '#/db/' + db.id, onclick: () => { ui.peek = null; $('#peek-root').innerHTML = ''; } }, db.icon, ' ', db.name),
-      h('button', { class: 'icon-btn', title: ui.peekWide ? 'Collapse' : 'Expand', onclick: () => { ui.peekWide = !ui.peekWide; renderPeek(); } }, ui.peekWide ? '⇥' : '⇤'),
+      h('button', { class: 'icon-btn', title: center ? 'Open pages in a side panel' : 'Open pages in the centre of the screen', onclick: () => { prefs.peekMode = center ? 'side' : 'center'; savePrefs(); renderPeek(); } }, center ? '◨' : '◻'),
       h('button', { class: 'icon-btn', title: 'Duplicate', onclick: () => duplicatePage(pg) }, '⧉'),
       h('button', { class: 'icon-btn danger', title: 'Delete', onclick: () => deletePage(pg.id) }, '🗑'),
       h('button', { class: 'icon-btn', title: 'Close (Esc)', onclick: closePeek }, '✕')),
@@ -1501,13 +1502,48 @@ function renderPeek(opts = {}) {
         tb('🔗', 'Link', () => { const u = prompt('Link URL:', 'https://'); if (u) document.execCommand('createLink', false, normUrl(u)); }),
         tb('⌫', 'Clear formatting', exec('removeFormat'))),
       content));
-  root.append(h('div', { class: 'peek-backdrop', onclick: closePeek }), panel);
+  const panel = h('aside', { class: 'peek' + (center ? ' center' : ''), role: 'dialog', 'aria-label': pg.title || 'Page' }, scroller);
+  const handle = side => h('div', {
+    class: 'peek-resize ' + side, title: 'Drag to resize · double-click to reset',
+    onpointerdown: e => startPeekResize(e, panel), ondblclick: () => { delete prefs[center ? 'centerW' : 'sideW']; savePrefs(); renderPeek(); },
+  });
+  panel.prepend(handle('left'));
+  if (center) panel.append(handle('right'));
+  applyPeekWidth(panel);
+  root.append(h('div', { class: 'peek-backdrop' + (center ? ' dim' : ''), onclick: closePeek }), panel);
   content.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener'; });
   requestAnimationFrame(() => {
     autosize(title);
-    panel.scrollTop = st;
+    scroller.scrollTop = st;
     if (opts.focusTitle) title.focus();
   });
+}
+// Page panel layout, remembered per device: side panel or centred, and its width.
+const PREFS_KEY = 'braindead.prefs';
+const prefs = { peekMode: 'side' };
+try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY)) || {}); } catch (e) { /* defaults */ }
+function savePrefs() { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* quota */ } }
+function applyPeekWidth(panel) {
+  const w = prefs[prefs.peekMode === 'center' ? 'centerW' : 'sideW'];
+  panel.style.width = w && innerWidth > 820 ? `min(${w}px, 100vw)` : '';
+}
+function startPeekResize(e, panel) {
+  e.preventDefault();
+  const center = prefs.peekMode === 'center';
+  const move = ev => {
+    const w = center ? Math.abs(ev.clientX - innerWidth / 2) * 2 : innerWidth - ev.clientX;
+    prefs[center ? 'centerW' : 'sideW'] = Math.round(Math.max(380, Math.min(w, innerWidth - 24)));
+    applyPeekWidth(panel);
+  };
+  const up = () => {
+    removeEventListener('pointermove', move);
+    removeEventListener('pointerup', up);
+    document.body.classList.remove('resizing');
+    savePrefs();
+  };
+  addEventListener('pointermove', move);
+  addEventListener('pointerup', up);
+  document.body.classList.add('resizing');
 }
 function autosize(t) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }
 
